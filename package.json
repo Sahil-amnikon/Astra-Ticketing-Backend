@@ -1,0 +1,28 @@
+{
+  "name": "astra-dotnet-react",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build:web": "npm run build --workspace @amnikon/web",
+    "typecheck:web": "tsc -p apps/web/tsconfig.json --noEmit",
+    "build:api": "dotnet build Astra.sln -c Release",
+    "test:api": "dotnet test Astra.sln -c Release"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.3.5",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.0"
+  }
+}

@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.secrets/
+**/appsettings.Local.json
+*.user
+*.log
+artifacts/
+node_modules/
+**/.next/
+**/tsconfig.tsbuildinfo
+
+# Windows local handoff settings
+.env.windows
+.env.local

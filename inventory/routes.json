@@ -1,0 +1,1174 @@
+[
+  {
+    "method": "GET",
+    "path": "/admin/overview",
+    "source": "apps/api/src/admin.ts",
+    "handler": "overview",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/:resource",
+    "source": "apps/api/src/admin.ts",
+    "handler": "list",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/users/:id",
+    "source": "apps/api/src/admin.ts",
+    "handler": "access",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/:resource/:id",
+    "source": "apps/api/src/admin.ts",
+    "handler": "update",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/users/:id",
+    "source": "apps/api/src/admin.ts",
+    "handler": "deleteUser",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/:resource/:id",
+    "source": "apps/api/src/admin.ts",
+    "handler": "delete",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/status",
+    "source": "apps/api/src/auth.ts",
+    "handler": "status",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/login",
+    "source": "apps/api/src/auth.ts",
+    "handler": "login",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/callback",
+    "source": "apps/api/src/auth.ts",
+    "handler": "callback",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/auth/me",
+    "source": "apps/api/src/auth.ts",
+    "handler": "me",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/auth/logout",
+    "source": "apps/api/src/auth.ts",
+    "handler": "logout",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/change-governance",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "configuration",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/change-governance/groups",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "group",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/change-governance/groups/:id",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "groupUpdate",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/change-governance/policy",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "policy",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/change-governance/templates",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "template",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/change-governance/templates/:id",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "templateUpdate",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/change-governance/blackouts",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "blackout",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/change-governance/blackouts/:id",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "blackoutUpdate",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/change-governance/:id",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "detail",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/change-governance/:id",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "amend",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/change-governance/:id/cab",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "requestCab",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/change-governance/:id/reviews",
+    "source": "apps/api/src/change-governance.ts",
+    "handler": "review",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes/options",
+    "source": "apps/api/src/changes.ts",
+    "handler": "options",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/contacts",
+    "source": "apps/api/src/changes.ts",
+    "handler": "createContact",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes/dashboard",
+    "source": "apps/api/src/changes.ts",
+    "handler": "dashboard",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes/calendar",
+    "source": "apps/api/src/changes.ts",
+    "handler": "calendar",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes",
+    "source": "apps/api/src/changes.ts",
+    "handler": "list",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes",
+    "source": "apps/api/src/changes.ts",
+    "handler": "create",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes/:id",
+    "source": "apps/api/src/changes.ts",
+    "handler": "detail",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/changes/:id/status",
+    "source": "apps/api/src/changes.ts",
+    "handler": "status",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/teams",
+    "source": "apps/api/src/changes.ts",
+    "handler": "team",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/tasks",
+    "source": "apps/api/src/changes.ts",
+    "handler": "task",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/changes/:id/tasks/:taskId",
+    "source": "apps/api/src/changes.ts",
+    "handler": "taskUpdate",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/approvals",
+    "source": "apps/api/src/changes.ts",
+    "handler": "approval",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/changes/:id/approvals/:approvalId",
+    "source": "apps/api/src/changes.ts",
+    "handler": "decision",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/updates",
+    "source": "apps/api/src/changes.ts",
+    "handler": "update",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/tickets",
+    "source": "apps/api/src/changes.ts",
+    "handler": "link",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/stakeholders",
+    "source": "apps/api/src/changes.ts",
+    "handler": "stakeholder",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/attachments",
+    "source": "apps/api/src/changes.ts",
+    "handler": "addAttachment",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/changes/:id/attachments/:attachmentId",
+    "source": "apps/api/src/changes.ts",
+    "handler": "attachment",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/communications",
+    "source": "apps/api/src/changes.ts",
+    "handler": "communication",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/changes/:id/communications/:communicationId/send",
+    "source": "apps/api/src/changes.ts",
+    "handler": "queueCommunication",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/portal/access/:id",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "contactAccess",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/portal/access/:id",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "linkContact",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/portal/options",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "options",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/portal/tickets",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "list",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/portal/tickets",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "create",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/portal/tickets/:id",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "detail",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/portal/tickets/:id/replies",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "reply",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/portal/tickets/:ticketId/attachments/:id",
+    "source": "apps/api/src/client-portal.ts",
+    "handler": "attachment",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/roles",
+    "source": "apps/api/src/core.ts",
+    "handler": "roles",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/permissions",
+    "source": "apps/api/src/core.ts",
+    "handler": "permissions",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/ticket-sources",
+    "source": "apps/api/src/core.ts",
+    "handler": "ticketSources",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/ticket-sources",
+    "source": "apps/api/src/core.ts",
+    "handler": "createTicketSource",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/CoreData.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/sources",
+    "source": "apps/api/src/core.ts",
+    "handler": "createSourceAlias",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/CoreData.cs"
+  },
+  {
+    "method": "PATCH",
+    "path": "/ticket-sources/:code",
+    "source": "apps/api/src/core.ts",
+    "handler": "updateTicketSource",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/CoreData.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/users",
+    "source": "apps/api/src/core.ts",
+    "handler": "users",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/users",
+    "source": "apps/api/src/core.ts",
+    "handler": "createUser",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/CoreData.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/users/resolve",
+    "source": "apps/api/src/core.ts",
+    "handler": "resolveUser",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Security/EntraDirectory.cs; tests/Astra.Tests/EntraDirectoryTests.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/clients",
+    "source": "apps/api/src/core.ts",
+    "handler": "clients",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/clients",
+    "source": "apps/api/src/core.ts",
+    "handler": "createClient",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/contacts",
+    "source": "apps/api/src/core.ts",
+    "handler": "contacts",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/contacts",
+    "source": "apps/api/src/core.ts",
+    "handler": "createContact",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/sites",
+    "source": "apps/api/src/core.ts",
+    "handler": "sites",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/sites",
+    "source": "apps/api/src/core.ts",
+    "handler": "createSite",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/assets",
+    "source": "apps/api/src/core.ts",
+    "handler": "assets",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/assets",
+    "source": "apps/api/src/core.ts",
+    "handler": "createAsset",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/categories",
+    "source": "apps/api/src/core.ts",
+    "handler": "categories",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/categories",
+    "source": "apps/api/src/core.ts",
+    "handler": "createCategory",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/tags",
+    "source": "apps/api/src/core.ts",
+    "handler": "tags",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/tags",
+    "source": "apps/api/src/core.ts",
+    "handler": "createTag",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/audit-logs",
+    "source": "apps/api/src/core.ts",
+    "handler": "auditLogs",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/core-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/groups/options",
+    "source": "apps/api/src/groups.ts",
+    "handler": "options",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/groups",
+    "source": "apps/api/src/groups.ts",
+    "handler": "list",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/groups/:id",
+    "source": "apps/api/src/groups.ts",
+    "handler": "detail",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/groups",
+    "source": "apps/api/src/groups.ts",
+    "handler": "create",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/groups/:id",
+    "source": "apps/api/src/groups.ts",
+    "handler": "update",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "source": "apps/api/src/health.ts",
+    "handler": "health",
+    "status": "native-implemented",
+    "remainingVerification": "Real Redis dependency readiness and deployed candidate checks"
+  },
+  {
+    "method": "GET",
+    "path": "/ready",
+    "source": "apps/api/src/health.ts",
+    "handler": "ready",
+    "status": "native-implemented",
+    "remainingVerification": "Real Redis dependency readiness and deployed candidate checks"
+  },
+  {
+    "method": "GET",
+    "path": "/help/topics",
+    "source": "apps/api/src/help.ts",
+    "handler": "topics",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/help/ask",
+    "source": "apps/api/src/help.ts",
+    "handler": "ask",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/help/web-status",
+    "source": "apps/api/src/help.ts",
+    "handler": "webStatus",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/help/web-search",
+    "source": "apps/api/src/help.ts",
+    "handler": "webSearch",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/help/feedback",
+    "source": "apps/api/src/help.ts",
+    "handler": "feedback",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/help/resolution-feedback",
+    "source": "apps/api/src/help.ts",
+    "handler": "resolutionFeedback",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/internal/departments",
+    "source": "apps/api/src/internal.ts",
+    "handler": "departments",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/internal/directory",
+    "source": "apps/api/src/internal.ts",
+    "handler": "directory",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/departments",
+    "source": "apps/api/src/internal.ts",
+    "handler": "createDepartment",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/departments/:id/members",
+    "source": "apps/api/src/internal.ts",
+    "handler": "member",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/tickets/:id/help",
+    "source": "apps/api/src/internal.ts",
+    "handler": "help",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/internal/tickets/:ticketId/help/:id",
+    "source": "apps/api/src/internal.ts",
+    "handler": "decide",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/knowledge/options",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "options",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/knowledge/catalogue",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "catalogue",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/knowledge/catalogue",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "createTemplate",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/knowledge/catalogue/:id",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "editTemplate",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/knowledge",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "list",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/knowledge",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "create",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/knowledge/:id",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "detail",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/knowledge/:id",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "edit",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/knowledge/:id/tickets",
+    "source": "apps/api/src/knowledge.ts",
+    "handler": "link",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/mail/tickets/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "ticket",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/mail/changes/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "change",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/mail/review/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "reviewDetail",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/mail/review/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "review",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/mail/intake/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "intake",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/mail/attachments/:id",
+    "source": "apps/api/src/mail-records.ts",
+    "handler": "attachment",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/email",
+    "source": "apps/api/src/mail-settings.ts",
+    "handler": "settings",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/email",
+    "source": "apps/api/src/mail-settings.ts",
+    "handler": "save",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/email/verify",
+    "source": "apps/api/src/mail-settings.ts",
+    "handler": "verify",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/email/test",
+    "source": "apps/api/src/mail-settings.ts",
+    "handler": "test",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/email/status",
+    "source": "apps/api/src/mail-settings.ts",
+    "handler": "status",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/notifications",
+    "source": "apps/api/src/notifications.ts",
+    "handler": "list",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/notification-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/notifications/preferences",
+    "source": "apps/api/src/notifications.ts",
+    "handler": "preferences",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/notification-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/notifications/preferences",
+    "source": "apps/api/src/notifications.ts",
+    "handler": "updatePreferences",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/notification-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/notifications/read-all",
+    "source": "apps/api/src/notifications.ts",
+    "handler": "markAllRead",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/notification-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/notifications/:id/read",
+    "source": "apps/api/src/notifications.ts",
+    "handler": "markRead",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/notification-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/problems/options",
+    "source": "apps/api/src/problems.ts",
+    "handler": "options",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/problems",
+    "source": "apps/api/src/problems.ts",
+    "handler": "list",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/problems",
+    "source": "apps/api/src/problems.ts",
+    "handler": "create",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/problems/:id",
+    "source": "apps/api/src/problems.ts",
+    "handler": "detail",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "PATCH",
+    "path": "/problems/:id",
+    "source": "apps/api/src/problems.ts",
+    "handler": "update",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/problems/:id/tickets",
+    "source": "apps/api/src/problems.ts",
+    "handler": "link",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "DELETE",
+    "path": "/problems/:id/tickets/:ticketId",
+    "source": "apps/api/src/problems.ts",
+    "handler": "unlink",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/problems/:id/notes",
+    "source": "apps/api/src/problems.ts",
+    "handler": "note",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/Problems.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/service-reports",
+    "source": "apps/api/src/service-reports.ts",
+    "handler": "report",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/sla/policies",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "policies",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/sla-configuration-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/sla/calendars",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "calendars",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/sla-configuration-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/sla/calendars",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "createCalendar",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/sla-configuration-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/sla/calendars/:id",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "updateCalendar",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/sla-configuration-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/sla/policies/:priority",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "updatePolicy",
+    "status": "native-implemented",
+    "remainingVerification": "Valid policy update and applying policy to open/paused tickets"
+  },
+  {
+    "method": "GET",
+    "path": "/reports/technicians",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "report",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/reports/technicians/export",
+    "source": "apps/api/src/sla-reports.ts",
+    "handler": "export",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/support/code",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "code",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/support/verify",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "verify",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/support/options",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "options",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/support/tickets",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "submit",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/support/logout",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "logout",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/client-domains",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "list",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/client-domains",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "create",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/client-domains/:id",
+    "source": "apps/api/src/support-portal.ts",
+    "handler": "update",
+    "status": "native-tested",
+    "evidence": "artifacts/test-results/domain-validation.trx"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets/dashboard",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "dashboard",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketRead.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets/options",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "options",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketRead.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets/views",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "views",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/views",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "saveView",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/tickets/views/:id",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "deleteView",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "list",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketRead.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "create",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketWrite.cs"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/requesters",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "createRequester",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketWrite.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets/:id",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "detail",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketRead.cs"
+  },
+  {
+    "method": "PATCH",
+    "path": "/tickets/:id",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "update",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/assign",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "assign",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/claim",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "claim",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/comments",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "comment",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/approval",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "requestApproval",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/approval/decision",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "decideApproval",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/tickets/:id/attachments",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "addAttachment",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketWrite.cs"
+  },
+  {
+    "method": "GET",
+    "path": "/tickets/:id/attachments/:attachmentId",
+    "source": "apps/api/src/tickets.ts",
+    "handler": "attachment",
+    "status": "native-implemented",
+    "evidence": "src/Astra.Api/Modules/TicketWrite.cs"
+  }
+]
