@@ -1,0 +1,112 @@
+--- a/ASTRA-Backend-latest/Program.cs
++++ b/ASTRA-Backend-latest/Program.cs
+@@ -1867,5 +1867,5 @@
+         await using var connection = CreateConnection();
+         await connection.OpenAsync(ct);
+-        var (admin, manager, _, _) = await GetKnowledgeRoles(connection, userId, ct);
++        var (admin, manager, _, _, _) = await GetKnowledgeRoles(connection, userId, ct);
+         const string sql = "SELECT s.id,s.name,s.description,s.instructions,s.category_id,s.client_id,s.active,s.created_by_user_id,s.updated_at,c.name AS category_name FROM service_templates s JOIN categories c ON c.id=s.category_id WHERE (@admin OR s.client_id IS NULL OR EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=@id AND cu.client_id=s.client_id)) AND (@manager OR s.active=1) ORDER BY s.name LIMIT 200";
+         await using var command = new MySqlCommand(sql, connection);
+@@ -1880,29 +1880,31 @@
+         await using var connection = CreateConnection();
+         await connection.OpenAsync(ct);
+-        var (admin, manager, staff, customer) = await GetKnowledgeRoles(connection, userId, ct);
++        var (admin, manager, staff, customer, canDraft) = await GetKnowledgeRoles(connection, userId, ct);
+         if (!staff && !customer) return null;
+         const string source = " FROM knowledge_articles a JOIN users u ON u.id=a.author_user_id LEFT JOIN categories c ON c.id=a.category_id";
+-        const string where = " WHERE (@admin OR a.client_id IS NULL OR EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=@id AND cu.client_id=a.client_id)) AND (@manager OR (a.status='PUBLISHED' AND (@staff OR a.visibility='CLIENT'))) AND (@search='' OR a.title LIKE @pattern OR a.body LIKE @pattern) AND (@article IS NULL OR a.id=@article)";
++        const string ownDraft = "(@canDraft AND a.client_id IS NOT NULL AND a.author_user_id=@id AND a.status='DRAFT' AND a.visibility='STAFF')";
++        const string where = " WHERE (@admin OR a.client_id IS NULL OR EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=@id AND cu.client_id=a.client_id)) AND (@manager OR (a.status='PUBLISHED' AND (@staff OR a.visibility='CLIENT')) OR " + ownDraft + ") AND (@search='' OR a.title LIKE @pattern OR a.body LIKE @pattern) AND (@article IS NULL OR a.id=@article)";
+         await using var count = new MySqlCommand("SELECT COUNT(*)" + source + where, connection);
+-        AddKnowledgeParameters(count, userId, admin, manager, staff, search, articleId);
++        AddKnowledgeParameters(count, userId, admin, manager, staff, canDraft, search, articleId);
+         var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+-        await using var query = new MySqlCommand("SELECT a.id,a.title,a.body,a.category_id,a.client_id,a.visibility,a.status,a.revision,a.updated_at,u.display_name AS author_name,c.name AS category_name" + source + where + " ORDER BY a.updated_at DESC LIMIT @take OFFSET @skip", connection);
+-        AddKnowledgeParameters(query, userId, admin, manager, staff, search, articleId);
++        await using var query = new MySqlCommand("SELECT a.id,a.title,a.body,a.category_id,a.client_id,a.visibility,a.status,a.revision,a.updated_at,u.display_name AS author_name,c.name AS category_name," + ownDraft + " AS can_edit_own_draft" + source + where + " ORDER BY a.updated_at DESC LIMIT @take OFFSET @skip", connection);
++        AddKnowledgeParameters(query, userId, admin, manager, staff, canDraft, search, articleId);
+         query.Parameters.AddWithValue("@take", articleId is null ? 20 : 1); query.Parameters.AddWithValue("@skip", articleId is null ? (page - 1) * 20 : 0);
+         var items = await ExecuteRows(query, ct);
+-        return articleId is null ? new { total, items, canManage = manager, isAdmin = admin } : items.FirstOrDefault();
+-    }
+-
+-    private static async Task<(bool Admin, bool Manager, bool Staff, bool Customer)> GetKnowledgeRoles(MySqlConnection connection, string userId, CancellationToken ct)
+-    {
+-        await using var command = new MySqlCommand("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('MANAGER','ADMIN')),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('INTERN','TECHNICIAN','TEAM_LEAD','MANAGER','ADMIN')),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='USER')", connection);
++        return articleId is null ? new { total, items, canManage = manager, canDraft, isAdmin = admin } : items.FirstOrDefault();
++    }
++
++    private static async Task<(bool Admin, bool Manager, bool Staff, bool Customer, bool CanDraft)> GetKnowledgeRoles(MySqlConnection connection, string userId, CancellationToken ct)
++    {
++        await using var command = new MySqlCommand("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('MANAGER','ADMIN')),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('INTERN','TECHNICIAN','TEAM_LEAD','MANAGER','ADMIN')),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='USER'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='TECHNICIAN')", connection);
+         command.Parameters.AddWithValue("@id", userId);
+         await using var reader = await command.ExecuteReaderAsync(ct);
+         await reader.ReadAsync(ct);
+-        return (reader.GetBoolean(0), reader.GetBoolean(1), reader.GetBoolean(2), reader.GetBoolean(3));
+-    }
+-
+-    private static void AddKnowledgeParameters(MySqlCommand command, string userId, bool admin, bool manager, bool staff, string search, string? articleId)
+-    {
++        return (reader.GetBoolean(0), reader.GetBoolean(1), reader.GetBoolean(2), reader.GetBoolean(3), reader.GetBoolean(4));
++    }
++
++    private static void AddKnowledgeParameters(MySqlCommand command, string userId, bool admin, bool manager, bool staff, bool canDraft, string search, string? articleId)
++    {
++        command.Parameters.AddWithValue("@canDraft", canDraft);
+         command.Parameters.AddWithValue("@id", userId); command.Parameters.AddWithValue("@admin", admin); command.Parameters.AddWithValue("@manager", manager); command.Parameters.AddWithValue("@staff", staff); command.Parameters.AddWithValue("@search", search); command.Parameters.AddWithValue("@pattern", $"%{search.Replace("%", "\\%").Replace("_", "\\_")}%"); command.Parameters.AddWithValue("@article", (object?)articleId ?? DBNull.Value);
+     }
+@@ -1968,7 +1970,8 @@
+             throw new ArgumentException("Enter a valid article title, body, visibility, status, category, and client.");
+         if (id is not null && body.Revision is null or < 1) throw new ArgumentException("Reload the article before editing.");
+-        await using var connection = CreateConnection();
+-        await connection.OpenAsync(ct);
+-        if (!await CanManageKnowledgeScope(connection, actorId, body.ClientId, ct)) return null;
++        var staffDraft = body.Status == "DRAFT" && body.Visibility == "STAFF";
++        await using var connection = CreateConnection();
++        await connection.OpenAsync(ct);
++        if (!await CanManageKnowledgeScope(connection, actorId, body.ClientId, ct, allowTechnicianDraft: staffDraft)) return null;
+         await using var transaction = await connection.BeginTransactionAsync(ct);
+         try
+@@ -1976,5 +1979,5 @@
+             if (id is not null)
+             {
+-                await using var existing = new MySqlCommand("SELECT client_id,revision FROM knowledge_articles WHERE id=@id FOR UPDATE", connection, transaction);
++                await using var existing = new MySqlCommand("SELECT client_id,revision,author_user_id,status,visibility FROM knowledge_articles WHERE id=@id FOR UPDATE", connection, transaction);
+                 existing.Parameters.AddWithValue("@id", id);
+                 await using var reader = await existing.ExecuteReaderAsync(ct);
+@@ -1982,6 +1985,7 @@
+                 var oldClient = reader.IsDBNull(0) ? null : reader.GetString(0);
+                 var revision = reader.GetInt32(1);
++                var ownStaffDraft = staffDraft && reader.GetString(2) == actorId && reader.GetString(3) == "DRAFT" && reader.GetString(4) == "STAFF";
+                 await reader.DisposeAsync();
+-                if (!await CanManageKnowledgeScope(connection, actorId, oldClient, ct, transaction)) { await transaction.RollbackAsync(ct); return null; }
++                if (!await CanManageKnowledgeScope(connection, actorId, oldClient, ct, transaction, ownStaffDraft)) { await transaction.RollbackAsync(ct); return null; }
+                 if (revision != body.Revision) throw new InvalidOperationException("Article changed since you opened it. Reload before saving.");
+             }
+@@ -2008,10 +2012,12 @@
+         await using var connection = CreateConnection();
+         await connection.OpenAsync(ct);
+-        var (_, _, staff, _) = await GetKnowledgeRoles(connection, actorId, ct);
++        var (_, manager, staff, _, _) = await GetKnowledgeRoles(connection, actorId, ct);
+         if (!staff) return null;
+         var article = await ListKnowledge(actorId, "", 1, articleId, ct);
+         var ticket = await GetTicketDetail(actorId, ticketId, ct);
+         if (article is null || ticket is null) return null;
+-        var articleClient = System.Text.Json.JsonSerializer.SerializeToElement(article).GetProperty("client_id");
++        var articleRecord = System.Text.Json.JsonSerializer.SerializeToElement(article);
++        if (!manager && articleRecord.GetProperty("status").GetString() != "PUBLISHED") return null;
++        var articleClient = articleRecord.GetProperty("client_id");
+         var ticketClient = System.Text.Json.JsonSerializer.SerializeToElement(ticket).GetProperty("ticket").GetProperty("client_id").GetString();
+         if (articleClient.ValueKind != System.Text.Json.JsonValueKind.Null && articleClient.GetString() != ticketClient)
+@@ -2032,7 +2038,8 @@
+     }
+ 
+-    private static async Task<bool> CanManageKnowledgeScope(MySqlConnection connection, string userId, string? clientId, CancellationToken ct, MySqlTransaction? transaction = null)
+-    {
+-        await using var command = new MySqlCommand("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='MANAGER'),EXISTS(SELECT 1 FROM client_users WHERE user_id=@id AND client_id=@client)", connection, transaction);
++    private static async Task<bool> CanManageKnowledgeScope(MySqlConnection connection, string userId, string? clientId, CancellationToken ct, MySqlTransaction? transaction = null, bool allowTechnicianDraft = false)
++    {
++        await using var command = new MySqlCommand("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND (role_code='MANAGER' OR (@allowTechnicianDraft AND role_code='TECHNICIAN'))),EXISTS(SELECT 1 FROM client_users WHERE user_id=@id AND client_id=@client)", connection, transaction);
++        command.Parameters.AddWithValue("@allowTechnicianDraft", allowTechnicianDraft);
+         command.Parameters.AddWithValue("@id", userId); command.Parameters.AddWithValue("@client", (object?)clientId ?? DBNull.Value);
+         await using var reader = await command.ExecuteReaderAsync(ct);

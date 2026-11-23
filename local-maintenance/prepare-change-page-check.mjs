@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const folder=path.dirname(fileURLToPath(import.meta.url));
+let source=(await fs.readFile(path.join(folder,'repair-employee-users.py'),'utf8')).replace(/\r\n/g,'\n');
+const start=source.indexOf("source = r'''"),end=source.indexOf("\n'''",start);
+if(start<0||end<0)throw Error('Runner template differs. Nothing written.');
+source=source.slice(0,start)+"source = (Path(__file__).resolve().parent/'check-change-page.cs').read_text()"+source.slice(end+4);
+source=source.replaceAll('repair-employee-users.py','check-change-page.py').replaceAll('ASTRA_EMPLOYEE_CONNECTION','ASTRA_CHANGE_CHECK_CONNECTION').replaceAll('.employee-user-repair-code-','.change-page-check-code-').replaceAll("['--apply']","['--check']").replaceAll('check-change-page.py --apply','check-change-page.py --check').replace('Associate company User-profile employees with Amnikon.','Read-only checks of the production Change Management page queries.');
+await fs.writeFile(path.join(folder,'check-change-page.py'),source);
+let verifier=(await fs.readFile(path.join(folder,'verify-al-amin-demos.ps1'),'utf8')).replace(/\r\n/g,'\n');
+verifier=verifier.replaceAll('.al-amin-demo-check-','.change-page-compile-check-').replaceAll('create-al-amin-review-demos.cs','check-change-page.cs').replaceAll('--check-id-handling','--check-read-only-mode').replaceAll('GUID/text ID regression check failed.','Read-only checker regression check failed.').replaceAll('demo creator','Change Management checker').replaceAll('ID regression','read-only mode');
+await fs.writeFile(path.join(folder,'verify-change-page-check.ps1'),verifier);
+console.log('Prepared the read-only diagnostic. No application data accessed.');

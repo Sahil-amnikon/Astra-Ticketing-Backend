@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const folder=path.dirname(fileURLToPath(import.meta.url)),root=path.resolve(folder,'../..');
+if(process.argv[2]!=='--apply')throw Error('Use --apply.');
+const workspace=await fs.readFile(path.join(root,'ASTRA-Frontend-latest/src/pages/change-workspace.tsx'),'utf8');
+const governance=await fs.readFile(path.join(root,'ASTRA-Backend-latest/FeatureChangeGovernance.cs'),'utf8');
+const run=name=>{const result=spawnSync(process.execPath,[path.join(folder,name),'--apply'],{stdio:'inherit'});if(result.error)throw result.error;if(result.status!==0)process.exit(result.status??1);};
+if(workspace.includes('ChangeTemplateWorkspace')||governance.includes('IsChangeTemplateContributor'))run('rollback-technician-change-templates.mjs');
+run('apply-change-review-queue.mjs');

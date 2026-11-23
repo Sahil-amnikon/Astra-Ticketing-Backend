@@ -1,9 +1,0 @@
-
-.env*
-**/.env*
-**/node_modules
-**/.next
-**/bin
-**/obj
-**/*.log
-**/*.bak

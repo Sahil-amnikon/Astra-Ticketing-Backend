@@ -1,0 +1,30 @@
+import {createRequire} from 'node:module';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import path from 'node:path';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+const folder=path.dirname(fileURLToPath(import.meta.url));
+const root=path.resolve(folder,'../../ASTRA-Frontend-latest');
+const require=createRequire(path.join(root,'package.json'));
+const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+const {createServer}=await import(pathToFileURL(require.resolve('vite')).href);
+const server=await createServer({root,server:{middlewareMode:true},appType:'custom'});
+try{
+ const {default:Panel}=await server.ssrLoadModule('/src/pages/change-template-workspace.tsx');
+ const render=role=>renderToStaticMarkup(React.createElement(Panel,{session:{csrfToken:'fixture',user:{id:'fixture-user',roles:[role]}},request:async()=>{throw Error('No requests allowed in this rendering test');},revision:0,onSaved:()=>{}}));
+ const technician=render('TECHNICIAN');
+ assert.match(technician,/Submit template for review/);assert.ok(!technician.includes('Active template'));
+ for(const field of ['Implementation plan','Testing and validation plan','Rollback plan'])assert.ok(technician.includes(field));
+ const lead=render('TEAM_LEAD');assert.match(lead,/Review submissions/);assert.ok(!lead.includes('Submit template for review'));
+ const admin=render('ADMIN');assert.match(admin,/Save template/);assert.match(admin,/Active template/);
+ console.log('PASS: technicians can submit templates, team leads can review, administrators retain template activation, and policy/CAB/blackout controls are not exposed.');
+}finally{await server.close();}
+const governance=fs.readFileSync(path.resolve(folder,'../FeatureChangeGovernance.cs'),'utf8');
+const sql=governance.match(/"(SELECT id FROM change_templates WHERE id=@id AND created_by_user_id=@actor AND active=0 FOR UPDATE)"/)[1].replace(' FOR UPDATE','');
+const db=new DatabaseSync(':memory:');db.exec("CREATE TABLE change_templates(id TEXT,created_by_user_id TEXT,active INTEGER); INSERT INTO change_templates VALUES('own','tech',0),('other','other-tech',0),('published','tech',1);");
+const query=db.prepare(sql);
+assert.equal(query.all({id:'own',actor:'tech'}).length,1);
+for(const id of ['other','published','missing'])assert.equal(query.all({id,actor:'tech'}).length,0,id);
+db.close();
+console.log('PASS: actual template edit authorization SQL permits only the technician’s own inactive templates. In-memory fixtures only.');

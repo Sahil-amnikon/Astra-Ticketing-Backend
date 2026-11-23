@@ -1,0 +1,35 @@
+diff --git a/ASTRA-Backend-latest/FeatureAdminEdits.cs b/ASTRA-Backend-latest/FeatureAdminEdits.cs
+index d0acf7d..02086cb 100644
+--- a/ASTRA-Backend-latest/FeatureAdminEdits.cs
++++ b/ASTRA-Backend-latest/FeatureAdminEdits.cs
+@@ -237,6 +237,12 @@ public sealed partial class MySqlStore
+         var departments = Ids("departmentIds");
+         var leads = Ids("leadDepartmentIds");
+         var scope = role == "ADMIN" ? "ALL" : JOptional(body, "workScope") ?? "CLIENT";
++        // Scope this automatic assignment by client ID so a rename or a new client cannot grant access.
++        var internalLeadClients = (configuration["ASTRA_INTERNAL_LEAD_CLIENT_IDS"] ?? "1d617e98-8c33-4f59-b10d-713bdfbac0e5")
++            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
++            .ToHashSet(StringComparer.OrdinalIgnoreCase);
++        var isInternalLead = role == "TEAM_LEAD" && clients.Any(internalLeadClients.Contains);
++        if (isInternalLead && scope is "CLIENT" or "INTERNAL") scope = "BOTH";
+         if (!new[] { "INTERNAL", "CLIENT", "BOTH", "ALL" }.Contains(scope))
+             throw new ArgumentException("Choose a valid work scope.");
+         if (role != "ADMIN" && scope == "ALL")
+@@ -270,6 +276,17 @@ public sealed partial class MySqlStore
+             throw new UnauthorizedAccessException();
+         if (!active || role != "ADMIN")
+             await EnsureOtherAdministrator(connection, tx, id, ct);
++        if (!isInternalLead && scope == "BOTH" && provision is null)
++        {
++            var previousLeadClients = await FRows(connection, tx, """
++                SELECT cu.client_id
++                FROM client_users cu
++                JOIN user_roles r ON r.user_id=cu.user_id AND r.role_code='TEAM_LEAD'
++                WHERE cu.user_id=@id
++                """, ct, ("id", id));
++            if (previousLeadClients.Any(row => row["client_id"] is string clientId && internalLeadClients.Contains(clientId)))
++                scope = role == "INTERN" ? "INTERNAL" : "CLIENT";
++        }
+         if (scope is "INTERNAL" or "BOTH" or "ALL")
+             clients.Add("00000000-0000-4000-8000-000000000132");
+         foreach (var client in clients)

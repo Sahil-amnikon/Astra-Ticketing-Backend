@@ -1,0 +1,12 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';
+const schema=fs.readFileSync(process.argv[2],'utf8').replace(/\) ENGINE=InnoDB[\s\S]*$/,')');
+const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON;CREATE TABLE changes(id TEXT PRIMARY KEY);CREATE TABLE users(id TEXT PRIMARY KEY);INSERT INTO changes VALUES(\'change\');INSERT INTO users VALUES(\'approver\');');
+db.function('JSON_TYPE',value=>Array.isArray(JSON.parse(value))?'ARRAY':'OBJECT');db.function('JSON_LENGTH',value=>JSON.parse(value).length);
+db.exec(schema);
+const insert=db.prepare('INSERT INTO change_request_details VALUES(?,?,?,?,?,?)');insert.run('change','["drinkpak","ashoc"]','["application","network"]','USER','requester','approver');
+assert.equal(JSON.parse(db.prepare('SELECT site_ids FROM change_request_details').get().site_ids).length,2);
+db.exec('DELETE FROM change_request_details');
+for(const values of [ ['change','[]','[]','INVALID','requester','approver'],['change','{}','[]','USER','requester','approver'],['missing','[]','[]','USER','requester','approver'],['change','[]','[]','USER','requester','missing'],['change',JSON.stringify(Array(51).fill('site')),'[]','USER','requester','approver'] ])assert.throws(()=>insert.run(...values));
+insert.run('change','[]','[]','CONTACT','requester','approver');db.exec("DELETE FROM users WHERE id='approver'");assert.equal(db.prepare('SELECT approver_user_id FROM change_request_details').get().approver_user_id,null);
+db.exec("DELETE FROM changes WHERE id='change'");assert.equal(db.prepare('SELECT COUNT(*) AS count FROM change_request_details').get().count,0);
+db.close();console.log('PASS: actual routing schema stores multiple sites/departments, validates array shape and limits, enforces change/approver references and retains context safely when an approver is removed. In-memory fixtures only.');

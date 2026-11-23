@@ -1,8 +1,0 @@
-# Apply with compose.sqlserver.lab.yml only after the native release and backups
-# are ready. It reuses the same private database volume and loopback listener.
-services:
-  sqlserver:
-    environment:
-      MSSQL_PID: Express
-      MSSQL_MEMORY_LIMIT_MB: '1536'
-    mem_limit: 2304m

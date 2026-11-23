@@ -1,7 +1,10 @@
-# ASTRA .NET and SQL Server migration
+# ASTRA backend development
 
-The user explicitly selected migration to .NET + React + Microsoft SQL Server on 13 October 2026. This supersedes the previous release's NestJS/PostgreSQL architecture requirement for this migration only.
+This is the current ASP.NET Core 10/MySQL application, paired with the React/Vite frontend. Earlier SQL Server migration instructions belong to historical commits.
 
-Keep the current React/Next.js frontend contract. Port the backend natively to ASP.NET Core; a proxy to the old Node backend is not a completed migration. Preserve IDs, historic ticket numbers, client/site isolation, capped workspace roles, read-only Administration, audit history, attachments and encrypted mail settings. Track route parity in inventory/routes.json.
-
-The live baseline is releases/astra-admin-service-config-20261013. Develop and test side by side. Do not replace the live application or restore its database until every module has passed parity checks and data-transfer reconciliation. Save an application rollback and a protected database backup before final cutover. Report pending work honestly.
+- Read README.md, retain the current API contract, IDs, history and client/site isolation.
+- Use application transactions and effective authorization checks for mutations.
+- Keep credentials, production configuration, uploads, database contents, logs and generated output out of Git.
+- Build `Astra.Api.csproj` and run focused maintenance checks appropriate to the change. Do not claim unexecuted production or database checks passed.
+- Production schema changes are separate from publishing source. Verify required storage before deployment, including the pending ticket-category dependency.
+- Do not deploy, modify production data, create backups or copy databases unless authorized by the user.

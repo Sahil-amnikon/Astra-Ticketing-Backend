@@ -1,0 +1,667 @@
+diff --git a/ASTRA-Backend-latest/Program.cs b/ASTRA-Backend-latest/Program.cs
+index 853c53a..c82102e 100644
+--- a/ASTRA-Backend-latest/Program.cs
++++ b/ASTRA-Backend-latest/Program.cs
+@@ -307,7 +307,7 @@ app.MapGet("/api/tickets", async (HttpContext context, MySqlStore store, Cancell
+     var scope = query["scope"].FirstOrDefault() ?? "my";
+     var status = query["status"].FirstOrDefault();
+     var search = query["q"].FirstOrDefault()?.Trim() ?? "";
+-    if (query["queue"] == "true" && status is null)
++    if (scope != "review" && query["queue"] == "true" && status is null)
+     {
+         status = search.ToUpperInvariant() switch
+         {
+@@ -317,7 +317,7 @@ app.MapGet("/api/tickets", async (HttpContext context, MySqlStore store, Cancell
+         };
+         if (status is not null) search = "";
+     }
+-    if (scope is not ("my" or "team" or "all" or "internal" or "unassigned") || search.Length > 200 ||
++    if (scope is not ("my" or "team" or "all" or "internal" or "unassigned" or "review") || search.Length > 200 ||
+         (status is not null && status is not ("NEW" or "OPEN" or "IN_PROGRESS" or "WAITING_FOR_CLIENT" or "WAITING_FOR_VENDOR" or "ON_HOLD" or "RESOLVED" or "CLOSED" or "CANCELLED")))
+         return Results.BadRequest(new { error = new { code = "INVALID_FILTER", message = "One or more ticket filters are invalid." } });
+     var page = int.TryParse(query["page"], out var requestedPage) ? Math.Clamp(requestedPage, 1, 100000) : 1;
+@@ -1543,7 +1543,7 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             var current = code == "ADMIN" ? available : reader.IsDBNull(1) ? defaults : ParsePermissionArray(reader.GetString(1));
+             if (code == "TEAM_LEAD")
+                 current = current.Union(["TICKETS_APPROVE", "AUDIT_VIEW"], StringComparer.Ordinal).ToArray();
+-            roles.Add(new { code, permissions = current, revision = reader.IsDBNull(2) ? 0 : reader.GetInt32(2), defaults, editable = code is "TECHNICIAN" or "TEAM_LEAD" or "MANAGER", available, users = reader.GetInt32(3) });
++            roles.Add(new { code, permissions = current.Intersect(available, StringComparer.Ordinal).ToArray(), revision = reader.IsDBNull(2) ? 0 : reader.GetInt32(2), defaults, editable = code is "TECHNICIAN" or "TEAM_LEAD" or "MANAGER", available, users = reader.GetInt32(3) });
+         }
+         return new { roles };
+     }
+@@ -1571,6 +1571,11 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             await using var roleReader = await roleQuery.ExecuteReaderAsync(ct);
+             while (await roleReader.ReadAsync(ct)) roles.Add(roleReader.GetString(0));
+         }
++        if (!roles.Any(role => role is "TEAM_LEAD" or "MANAGER" or "ADMIN"))
++        {
++            allow = allow.Where(permission => permission != "TICKETS_ASSIGN").ToArray();
++            deny = deny.Where(permission => permission != "TICKETS_ASSIGN").ToArray();
++        }
+         var groupPermissions = new HashSet<string>(StringComparer.Ordinal);
+         await using (var groupQuery = new MySqlCommand("SELECT g.permissions FROM access_groups g JOIN staff_group_members gm ON gm.group_id=g.id WHERE gm.user_id=@id AND g.kind='STAFF' AND g.active=1", connection))
+         {
+@@ -1591,7 +1596,7 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+     private static readonly string[] StaffPolicyCodes = ["TICKETS_TEAM_VIEW","TICKETS_ASSIGN","TICKETS_APPROVE","CATEGORY_MANAGE","SLA_MANAGE","REPORTS_VIEW","TAGS_MANAGE"];
+     private static string[] DefaultRolePolicy(string code) => code switch
+     {
+-        "TECHNICIAN" => ["TICKETS_TEAM_VIEW","TICKETS_ASSIGN"],
++        "TECHNICIAN" => ["TICKETS_TEAM_VIEW"],
+         "TEAM_LEAD" => ["TICKETS_TEAM_VIEW","TICKETS_ASSIGN","TICKETS_APPROVE","CATEGORY_MANAGE","TAGS_MANAGE","REPORTS_VIEW","AUDIT_VIEW"],
+         "MANAGER" => ["TICKETS_TEAM_VIEW","TICKETS_ASSIGN","TICKETS_APPROVE","CATEGORY_MANAGE","TAGS_MANAGE","SLA_MANAGE","REPORTS_VIEW","AUDIT_VIEW"],
+         "ADMIN" => PolicyPermissionCodes,
+@@ -1601,7 +1606,7 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+     {
+         "ADMIN" => PolicyPermissionCodes,
+         "MANAGER" or "TEAM_LEAD" => [..StaffPolicyCodes,"AUDIT_VIEW"],
+-        "TECHNICIAN" => StaffPolicyCodes,
++        "TECHNICIAN" => StaffPolicyCodes.Where(permission => permission != "TICKETS_ASSIGN").ToArray(),
+         _ => []
+     };
+ 
+@@ -2582,6 +2587,8 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             }
+             if (body.AssignedUserId is not null)
+             {
++                var assignmentAccess = await GetTicketAssignmentAccess(connection, transaction, userId, ct);
++                if (!assignmentAccess.CanAssign) throw new UnauthorizedAccessException();
+                 if (!await IsTicketAssigneeEligible(connection, transaction, body.AssignedUserId, body.ClientId, body.SiteId, admin, ct))
+                     throw new ArgumentException("That team member cannot access this client or site.");
+             }
+@@ -2671,25 +2678,42 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+         catch { await transaction.RollbackAsync(ct); throw; }
+     }
+ 
++    private static async Task<(bool CanAssign, bool IsAdmin)> GetTicketAssignmentAccess(
++        MySqlConnection connection, MySqlTransaction transaction, string userId, CancellationToken ct)
++    {
++        await using var command = FCommand(connection, transaction, """
++            SELECT EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code='ADMIN'),
++                   EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code IN ('TEAM_LEAD','MANAGER')),
++                   (EXISTS(SELECT 1 FROM user_roles r LEFT JOIN role_access_policies rp ON rp.role_code=r.role_code
++                           WHERE r.user_id=u.id AND r.role_code IN ('TEAM_LEAD','MANAGER')
++                             AND (rp.role_code IS NULL OR JSON_CONTAINS(rp.permissions,JSON_QUOTE('TICKETS_ASSIGN'))))
++                    OR EXISTS(SELECT 1 FROM user_permissions p WHERE p.user_id=u.id AND p.permission_code='TICKETS_ASSIGN')
++                    OR EXISTS(SELECT 1 FROM staff_group_members gm JOIN access_groups g ON g.id=gm.group_id
++                              WHERE gm.user_id=u.id AND g.active=1 AND g.kind='STAFF' AND JSON_CONTAINS(g.permissions,JSON_QUOTE('TICKETS_ASSIGN')))
++                    OR COALESCE(JSON_CONTAINS(p.allow_permissions,JSON_QUOTE('TICKETS_ASSIGN')),0)),
++                   COALESCE(JSON_CONTAINS(p.deny_permissions,JSON_QUOTE('TICKETS_ASSIGN')),0)
++            FROM users u LEFT JOIN user_access_policies p ON p.user_id=u.id
++            WHERE u.id=@actor AND u.active=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6))
++            """, ("actor", userId));
++        await using var reader = await command.ExecuteReaderAsync(ct);
++        if (!await reader.ReadAsync(ct)) return (false, false);
++        var admin = reader.GetBoolean(0);
++        return (admin || (reader.GetBoolean(1) && reader.GetBoolean(2) && !reader.GetBoolean(3)), admin);
++    }
++
+     public async Task<AssignedTicket?> AssignTicket(string userId, string ticketId, AssignTicketRequest body, CancellationToken ct)
+     {
+         if (ConnectionString is null) return null;
+-        if (await GetTicketDetail(userId, ticketId, ct) is null) return null;
+         await using var connection = CreateConnection();
+         await connection.OpenAsync(ct);
+         await using var transaction = await connection.BeginTransactionAsync(ct);
+         try
+         {
+-            await using var grants = new MySqlCommand("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('TECHNICIAN','TEAM_LEAD','MANAGER','ADMIN')),EXISTS(SELECT 1 FROM user_permissions WHERE user_id=@id AND permission_code='TICKETS_ASSIGN'),(EXISTS(SELECT 1 FROM user_roles ur LEFT JOIN role_access_policies rp ON rp.role_code=ur.role_code WHERE ur.user_id=@id AND ur.role_code IN ('TECHNICIAN','TEAM_LEAD','MANAGER','ADMIN') AND (rp.role_code IS NULL OR JSON_CONTAINS(rp.permissions,JSON_QUOTE('TICKETS_ASSIGN')))) OR EXISTS(SELECT 1 FROM staff_group_members gm JOIN access_groups g ON g.id=gm.group_id WHERE gm.user_id=@id AND g.active=1 AND g.kind='STAFF' AND JSON_CONTAINS(g.permissions,JSON_QUOTE('TICKETS_ASSIGN')))),EXISTS(SELECT 1 FROM user_access_policies p WHERE p.user_id=@id AND JSON_CONTAINS(p.allow_permissions,JSON_QUOTE('TICKETS_ASSIGN'))),EXISTS(SELECT 1 FROM user_access_policies p WHERE p.user_id=@id AND JSON_CONTAINS(p.deny_permissions,JSON_QUOTE('TICKETS_ASSIGN'))) ", connection, transaction);
+-            grants.Parameters.AddWithValue("@id", userId);
+-            await using var grantReader = await grants.ExecuteReaderAsync(ct);
+-            if (!await grantReader.ReadAsync(ct) || !grantReader.GetBoolean(1)) throw new UnauthorizedAccessException();
+-            var isAdmin = grantReader.GetBoolean(0);
+-            var canAssign = isAdmin || (grantReader.GetBoolean(2) || grantReader.GetBoolean(3) || grantReader.GetBoolean(4)) && !grantReader.GetBoolean(5);
+-            await grantReader.DisposeAsync();
++            var (canAssign, isAdmin) = await GetTicketAssignmentAccess(connection, transaction, userId, ct);
+             if (!canAssign) throw new UnauthorizedAccessException();
+-            await using var ticket = new MySqlCommand("SELECT client_id,site_id,assigned_user_id,ticket_number,subject FROM tickets WHERE id=@ticket FOR UPDATE", connection, transaction);
+-            ticket.Parameters.AddWithValue("@ticket", ticketId);
++            await using var ticket = FCommand(connection, transaction,
++                $"SELECT t.client_id,t.site_id,t.assigned_user_id,t.ticket_number,t.subject FROM tickets t WHERE t.id=@ticket AND {FScope("t")} FOR UPDATE",
++                ("ticket", ticketId), ("actor", userId), ("admin", isAdmin));
+             await using var ticketReader = await ticket.ExecuteReaderAsync(ct);
+             if (!await ticketReader.ReadAsync(ct)) return null;
+             var clientId = ticketReader.GetString(0); var siteId = ticketReader.IsDBNull(1) ? null : ticketReader.GetString(1); var previousId = ticketReader.IsDBNull(2) ? null : ticketReader.GetString(2);
+@@ -2724,17 +2748,17 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+         await using var transaction = await connection.BeginTransactionAsync(ct);
+         try
+         {
+-            await using var ticket = new MySqlCommand("SELECT t.client_id,t.site_id,t.assigned_user_id,t.status,EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN'),EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code IN ('TECHNICIAN','TEAM_LEAD','ADMIN')) FROM tickets t WHERE t.id=@ticket AND (EXISTS(SELECT 1 FROM user_roles WHERE user_id=@id AND role_code='ADMIN') OR EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=@id AND cu.client_id=t.client_id)) FOR UPDATE", connection, transaction);
+-            ticket.Parameters.AddWithValue("@id", userId); ticket.Parameters.AddWithValue("@ticket", ticketId);
++            var (canClaim, isAdmin) = await GetTicketAssignmentAccess(connection, transaction, userId, ct);
++            if (!canClaim) throw new UnauthorizedAccessException();
++            await using var ticket = FCommand(connection, transaction,
++                $"SELECT t.assigned_user_id,t.status FROM tickets t WHERE t.id=@ticket AND {FScope("t")} FOR UPDATE",
++                ("ticket", ticketId), ("actor", userId), ("admin", isAdmin));
+             await using var reader = await ticket.ExecuteReaderAsync(ct);
+             if (!await reader.ReadAsync(ct)) return null;
+-            var clientId = reader.GetString(0); var siteId = reader.IsDBNull(1) ? null : reader.GetString(1); var assignedId = reader.IsDBNull(2) ? null : reader.GetString(2); var status = reader.GetString(3); var isAdmin = reader.GetBoolean(4); var canClaim = reader.GetBoolean(5);
++            var assignedId = reader.IsDBNull(0) ? null : reader.GetString(0);
++            var status = reader.GetString(1);
+             await reader.DisposeAsync();
+-            if (!canClaim) throw new UnauthorizedAccessException();
+             if (assignedId is not null) throw new InvalidOperationException("Ticket is already assigned.");
+-            await using var target = new MySqlCommand("SELECT 1 FROM users u JOIN user_roles r ON r.user_id=u.id WHERE u.id=@id AND u.active=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6)) AND r.role_code IN ('TECHNICIAN','TEAM_LEAD','ADMIN') AND (r.role_code='ADMIN' OR EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=u.id AND cu.client_id=@client)) AND (@site IS NULL OR r.role_code='ADMIN' OR NOT EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id) OR EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id AND us.site_id=@site))", connection, transaction);
+-            target.Parameters.AddWithValue("@id", userId); target.Parameters.AddWithValue("@client", clientId); target.Parameters.AddWithValue("@site", (object?)siteId ?? DBNull.Value);
+-            if (await target.ExecuteScalarAsync(ct) is null) throw new UnauthorizedAccessException();
+             var nextStatus = status == "NEW" ? "OPEN" : status;
+             await using (var update = new MySqlCommand("UPDATE tickets SET assigned_user_id=@actor,status=@status,updated_at=UTC_TIMESTAMP(6) WHERE id=@ticket", connection, transaction)) { update.Parameters.AddWithValue("@actor", userId); update.Parameters.AddWithValue("@status", nextStatus); update.Parameters.AddWithValue("@ticket", ticketId); await update.ExecuteNonQueryAsync(ct); }
+             await using (var assignment = new MySqlCommand("INSERT INTO ticket_assignments(ticket_id,assigned_user_id,actor_user_id,reason) VALUES(@ticket,@actor,@actor,'Claimed by technician')", connection, transaction)) { assignment.Parameters.AddWithValue("@ticket", ticketId); assignment.Parameters.AddWithValue("@actor", userId); await assignment.ExecuteNonQueryAsync(ct); }
+@@ -2885,6 +2909,10 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             await reader.DisposeAsync();
+             if (!isStaff || isIntern) throw new UnauthorizedAccessException();
+             if (!isAdmin && oldAssignee != userId && !isWide) throw new UnauthorizedAccessException();
++            if (!isWide && (body.Status is "CLOSED" or "CANCELLED" || oldStatus is "RESOLVED" or "CLOSED" or "CANCELLED"))
++                throw new UnauthorizedAccessException();
++            if (body.Status == "CLOSED" && oldStatus is not ("RESOLVED" or "CLOSED"))
++                throw new ArgumentException("Resolve the ticket before closing it.");
+             if (body.CategoryId is not null)
+             {
+                 await using var category = new MySqlCommand("SELECT 1 FROM categories WHERE id=@id AND active", connection, transaction); category.Parameters.AddWithValue("@id", body.CategoryId);
+@@ -2892,7 +2920,7 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             }
+             var tags = body.TagIds?.Distinct(StringComparer.Ordinal).ToArray();
+             if (tags is not null) foreach (var tag in tags) { await using var check = new MySqlCommand("SELECT 1 FROM tags WHERE id=@id AND active", connection, transaction); check.Parameters.AddWithValue("@id", tag); if (await check.ExecuteScalarAsync(ct) is null) throw new ArgumentException("A selected tag is unavailable."); }
+-            await using (var update = new MySqlCommand("UPDATE tickets SET status=COALESCE(@status,status),priority=COALESCE(@priority,priority),category_id=COALESCE(@category,category_id),resolved_at=CASE WHEN @status='RESOLVED' THEN COALESCE(resolved_at,UTC_TIMESTAMP(6)) WHEN @status IS NOT NULL AND @status<>'RESOLVED' THEN NULL ELSE resolved_at END,closed_at=CASE WHEN @status='CLOSED' THEN COALESCE(closed_at,UTC_TIMESTAMP(6)) WHEN @status IS NOT NULL AND @status<>'CLOSED' THEN NULL ELSE closed_at END,updated_at=UTC_TIMESTAMP(6) WHERE id=@ticket", connection, transaction))
++            await using (var update = new MySqlCommand("UPDATE tickets SET status=COALESCE(@status,status),priority=COALESCE(@priority,priority),category_id=COALESCE(@category,category_id),resolved_at=CASE WHEN @status='RESOLVED' THEN COALESCE(resolved_at,UTC_TIMESTAMP(6)) WHEN @status IS NOT NULL AND @status<>'CLOSED' THEN NULL ELSE resolved_at END,closed_at=CASE WHEN @status='CLOSED' THEN COALESCE(closed_at,UTC_TIMESTAMP(6)) WHEN @status IS NOT NULL AND @status<>'CLOSED' THEN NULL ELSE closed_at END,updated_at=UTC_TIMESTAMP(6) WHERE id=@ticket", connection, transaction))
+             {
+                 update.Parameters.AddWithValue("@status", (object?)body.Status ?? DBNull.Value); update.Parameters.AddWithValue("@priority", (object?)body.Priority ?? DBNull.Value); update.Parameters.AddWithValue("@category", (object?)body.CategoryId ?? DBNull.Value); update.Parameters.AddWithValue("@ticket", ticketId); await update.ExecuteNonQueryAsync(ct);
+             }
+@@ -3082,20 +3110,21 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+         if (!isStaff) return new TicketPage(0, [], true);
+         if (!canTeam && isStaff)
+             canTeam = await HasDefaultTeamPermission(connection, userId, ct);
+-        if ((scope is "all" or "unassigned") && !isWide || scope == "team" && !canTeam || scope == "internal" && workScope is not ("INTERNAL" or "BOTH" or "ALL"))
++        if ((scope is "all" or "unassigned" or "review") && !isWide || scope == "team" && !canTeam || scope == "internal" && workScope is not ("INTERNAL" or "BOTH" or "ALL"))
+             return new TicketPage(0, [], true);
+ 
+         var scopePredicate = scope switch
+         {
+             "all" => "1=1",
+             "unassigned" => "t.assigned_user_id IS NULL",
++            "review" => "t.status='RESOLVED'",
+             "team" => "(NOT EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=@id) OR EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=@id AND us.site_id=t.site_id))",
+             "internal" => "(t.client_id='00000000-0000-4000-8000-000000000132' AND (NOT EXISTS(SELECT 1 FROM department_users du WHERE du.user_id=@id) OR EXISTS(SELECT 1 FROM department_users du WHERE du.user_id=@id AND du.department_id=t.department_id)))",
+             _ => "(t.assigned_user_id=@id OR t.created_by_user_id=@id OR EXISTS(SELECT 1 FROM ticket_collaborators tc WHERE tc.ticket_id=t.id AND tc.user_id=@id))"
+         };
+         var accessPredicate = isAdmin ? "1=1" : "((t.client_id IN (SELECT client_id FROM client_users WHERE user_id=@id) OR t.site_id IN (SELECT site_id FROM user_sites WHERE user_id=@id)) AND (NOT EXISTS(SELECT 1 FROM user_sites WHERE user_id=@id) OR t.site_id IN (SELECT site_id FROM user_sites WHERE user_id=@id)))";
+         var predicate = $"({accessPredicate}) AND ({scopePredicate}) AND (@ticketId IS NULL OR t.id=@ticketId) AND (@status IS NULL OR t.status=@status) AND (@search='' OR t.ticket_number LIKE @pattern OR t.subject LIKE @pattern OR t.description LIKE @pattern OR c.name LIKE @pattern OR r.name LIKE @pattern)";
+-        if (filters is not null && filters["queue"] == "true" && status is null && search.Length == 0 &&
++        if (scope != "review" && filters is not null && filters["queue"] == "true" && status is null && search.Length == 0 &&
+             filters["dashboardFilter"] != "RESOLVED_RECENTLY")
+             predicate += " AND t.status NOT IN ('CLOSED','RESOLVED')";
+         var extraFilters = TicketExtraFilters(filters);
+@@ -3250,7 +3279,7 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+             var role = reader.GetString(0);
+             var defaults = role switch
+             {
+-                "TECHNICIAN" => new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN" },
++                "TECHNICIAN" => DefaultRolePolicy("TECHNICIAN"),
+                 "TEAM_LEAD" => new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN", "CATEGORY_MANAGE", "TAGS_MANAGE", "REPORTS_VIEW" },
+                 "MANAGER" or "ADMIN" => new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN", "TICKETS_APPROVE", "CATEGORY_MANAGE", "TAGS_MANAGE", "SLA_MANAGE", "REPORTS_VIEW", "AUDIT_VIEW" },
+                 _ => Array.Empty<string>()
+@@ -3397,12 +3426,12 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+         if (role == "ADMIN") return ["*"];
+         var defaults = role switch
+         {
+-            "TECHNICIAN" => new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN" },
++            "TECHNICIAN" => DefaultRolePolicy("TECHNICIAN"),
+             "TEAM_LEAD" => DefaultRolePolicy("TEAM_LEAD"),
+             "MANAGER" => new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN", "TICKETS_APPROVE", "CATEGORY_MANAGE", "TAGS_MANAGE", "SLA_MANAGE", "REPORTS_VIEW", "AUDIT_VIEW" },
+             _ => Array.Empty<string>()
+         };
+-        var ceiling = role is "MANAGER" or "TEAM_LEAD" ? StaffPermissions.Append("AUDIT_VIEW").ToHashSet(StringComparer.Ordinal) : role == "TECHNICIAN" ? StaffPermissions.ToHashSet(StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
++        var ceiling = AvailableRolePolicy(role).ToHashSet(StringComparer.Ordinal);
+         await using (var rolePolicyCommand = new MySqlCommand("SELECT permissions FROM role_access_policies WHERE role_code=@id", connection))
+         {
+             rolePolicyCommand.Parameters.AddWithValue("@id", role);
+diff --git a/ASTRA-Backend-latest/FeatureAdminEdits.cs b/ASTRA-Backend-latest/FeatureAdminEdits.cs
+index 1368b89..d0acf7d 100644
+--- a/ASTRA-Backend-latest/FeatureAdminEdits.cs
++++ b/ASTRA-Backend-latest/FeatureAdminEdits.cs
+@@ -257,7 +257,7 @@ public sealed partial class MySqlStore
+         var requested = JArray(body, "permissions").Select(x => x.GetString() ?? "").ToArray();
+         if (requested.Any(x => !StaffPermissions.Contains(x) && !new[] { "AUDIT_VIEW", "USERS_MANAGE", "CLIENTS_MANAGE", "CONTACTS_MANAGE", "SITES_MANAGE" }.Contains(x)))
+             throw new ArgumentException("Invalid permission.");
+-        var permissions = role == "ADMIN" ? Array.Empty<string>() : role == "MANAGER" ? StaffPermissions.Append("AUDIT_VIEW").ToArray() : role == "TEAM_LEAD" ? new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN", "CATEGORY_MANAGE", "TAGS_MANAGE", "REPORTS_VIEW" } : role == "TECHNICIAN" ? new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN" } : Array.Empty<string>();
++        var permissions = role == "ADMIN" ? Array.Empty<string>() : role == "MANAGER" ? StaffPermissions.Append("AUDIT_VIEW").ToArray() : role == "TEAM_LEAD" ? new[] { "TICKETS_TEAM_VIEW", "TICKETS_ASSIGN", "CATEGORY_MANAGE", "TAGS_MANAGE", "REPORTS_VIEW" } : role == "TECHNICIAN" ? DefaultRolePolicy("TECHNICIAN") : Array.Empty<string>();
+         await using var connection = CreateConnection();
+         await connection.OpenAsync(ct);
+         await using var tx = await connection.BeginTransactionAsync(ct);
+diff --git a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+index 1c4df29..38b317f 100644
+--- a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
++++ b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+@@ -136,10 +136,16 @@ const workspaceBase = (mode: Mode) =>
+       ? '/management'
+       : '/operations';
+ const ticketListPath = (mode: Mode) => `${workspaceBase(mode)}/tickets`;
+-const ticketDetailPath = (mode: Mode, id: unknown) =>
+-  mode === 'admin'
++const ticketReviewPath = (mode: Mode) => `${ticketListPath(mode)}?review=1`;
++const canReviewTickets = (roles: string[]) =>
++  roles.some((role) => ['TEAM_LEAD', 'MANAGER', 'ADMIN'].includes(role));
++const canAssignTickets = (user: Session['user']) =>
++  canReviewTickets(user.roles) &&
++  (user.roles.includes('ADMIN') || !!user.permissions?.includes('TICKETS_ASSIGN'));
++const ticketDetailPath = (mode: Mode, id: unknown, reviewing = false) =>
++  (mode === 'admin'
+     ? `/admin/ticket/${String(id)}`
+-    : `${workspaceBase(mode)}/tickets/${String(id)}`;
++    : `${workspaceBase(mode)}/tickets/${String(id)}`) + (reviewing ? '?review=1' : '');
+ const workspaceLabel = (mode: Mode) =>
+   mode === 'admin'
+     ? 'Administration'
+@@ -200,6 +206,7 @@ function TicketWorkspaceScreen({
+   initialQuery,
+ }: TicketWorkspaceProps & { initialQuery: string }) {
+   const router = useRouter();
++  const reviewing = new URLSearchParams(initialQuery).get('review') === '1';
+   const [session, setSession] = useState<Session>();
+   const [options, setOptions] = useState<Options>();
+   const [data, setData] = useState<Row>();
+@@ -296,12 +303,16 @@ function TicketWorkspaceScreen({
+       controller.abort();
+     }, 15000);
+     const listQuery = new URLSearchParams({
+-      scope: isWideMode(mode) ? 'all' : ticketScope,
++      scope: reviewing ? 'review' : isWideMode(mode) ? 'all' : ticketScope,
+       pageSize: '50',
+       queue: 'true',
+     });
+     for (const [key, value] of Object.entries(appliedTicketFilters))
+       if (value) listQuery.set(key, value);
++    if (reviewing) {
++      listQuery.delete('status');
++      listQuery.delete('dashboardFilter');
++    }
+     const path =
+       view === 'dashboard'
+         ? `/tickets/dashboard?scope=${isWideMode(mode) ? 'all' : 'my'}`
+@@ -352,6 +363,7 @@ function TicketWorkspaceScreen({
+     appliedTicketFilters,
+     mode,
+     request,
++    reviewing,
+     revision,
+     session,
+     ticketId,
+@@ -683,6 +695,8 @@ function TicketWorkspaceScreen({
+               mode={mode}
+               page={data as unknown as TicketPage}
+               scope={ticketScope}
++              reviewing={reviewing}
++              canReview={canReviewTickets(session.user.roles)}
+               options={options}
+               filters={ticketFilters}
+               savedViews={savedViews}
+@@ -732,10 +746,7 @@ function TicketWorkspaceScreen({
+               onNotice={setNotice}
+               refresh={() => setRevision((value) => value + 1)}
+               canEdit={
+-                mode !== 'admin' &&
+-                (session.user.roles.some((role) =>
+-                  ['TEAM_LEAD', 'MANAGER', 'ADMIN'].includes(role),
+-                ) ||
++                (canReviewTickets(session.user.roles) ||
+                   String(
+                     (data as unknown as TicketDetail).ticket.assigned_user_id,
+                   ) === session.user.id ||
+@@ -745,12 +756,10 @@ function TicketWorkspaceScreen({
+                     ),
+                   ))
+               }
+-              canClaim={
+-                mode !== 'admin' &&
+-                session.user.roles.some((role) =>
+-                  ['TECHNICIAN', 'TEAM_LEAD', 'ADMIN'].includes(role),
+-                )
+-              }
++              canAssign={canAssignTickets(session.user)}
++              canReview={canReviewTickets(session.user.roles)}
++              reviewing={reviewing}
++              viewerId={session.user.id}
+               canDecideApproval={
+                 mode !== 'admin' && (allowed('TICKETS_APPROVE') ?? false)
+               }
+@@ -950,6 +959,8 @@ function TicketList({
+   mode,
+   page,
+   scope,
++  reviewing,
++  canReview,
+   options,
+   filters,
+   savedViews,
+@@ -963,6 +974,8 @@ function TicketList({
+   mode: Mode;
+   page: TicketPage;
+   scope: 'my' | 'team' | 'internal';
++  reviewing: boolean;
++  canReview: boolean;
+   options: Options;
+   filters: TicketFilters;
+   savedViews: SavedTicketView[];
+@@ -1046,29 +1059,44 @@ function TicketList({
+     <>
+       <Heading
+         eyebrow={
+-          isWideMode(mode)
++          reviewing || isWideMode(mode)
+             ? 'SERVICE OPERATIONS / OVERSIGHT'
+             : scope === 'team'
+               ? 'MY WORKSPACE / ASSIGNED SITES'
+               : 'MY WORKSPACE / ASSIGNED'
+         }
+         title={
+-          isWideMode(mode)
++          reviewing
++            ? 'Review queue'
++            : isWideMode(mode)
+             ? 'All tickets'
+             : scope === 'team'
+               ? 'Site team tickets'
+               : 'My tickets'
+         }
+-        detail={`${page.total} ticket${page.total === 1 ? '' : 's'} in this queue.${filters.dashboardFilter ? ' ' + dashboardFilterLabels[filters.dashboardFilter] + '.' : ''}`}
++        detail={reviewing
++          ? `${page.total} resolved ticket${page.total === 1 ? '' : 's'} waiting for review and closure.`
++          : `${page.total} ticket${page.total === 1 ? '' : 's'} in this queue.${filters.dashboardFilter ? ' ' + dashboardFilterLabels[filters.dashboardFilter] + '.' : ''}`}
+         action={
+-          mode === 'technician' ? (
+-            <Link className="primary" href="/operations/new">
+-              + New Ticket
+-            </Link>
+-          ) : undefined
++          <div className="heading-actions" style={{ display: 'flex' }}>
++            {reviewing ? (
++              <Link className="secondary" href={ticketListPath(mode)}>Back to tickets</Link>
++            ) : (
++              <>
++                {canReview && <Link className="secondary" href={ticketReviewPath(mode)}>Review queue</Link>}
++                {
++                  mode === 'technician' ? (
++                    <Link className="primary" href="/operations/new">
++                      + New Ticket
++                    </Link>
++                  ) : undefined
++                }
++              </>
++            )}
++          </div>
+         }
+       />
+-      <div
++      {!reviewing && <div
+         className="queue-summary"
+         aria-label="Current ticket results summary"
+       >
+@@ -1096,7 +1124,7 @@ function TicketList({
+             </div>
+           </article>
+         ))}
+-      </div>
++      </div>}
+       <section className="panel ticket-search-panel queue-toolbar">
+         <form
+           onSubmit={(event) => {
+@@ -1119,7 +1147,8 @@ function TicketList({
+             <label className="compact-select">
+               <span className="sr-only">Status</span>
+               <select
+-                value={filters.status}
++                value={reviewing ? 'RESOLVED' : filters.status}
++                disabled={reviewing}
+                 onChange={(event) => update('status', event.target.value)}
+               >
+                 <option value="">Any status</option>
+@@ -1284,17 +1313,18 @@ function TicketList({
+             <TicketTable
+               rows={page.items}
+               mode={mode}
+-              showAssignee={mode !== 'technician' || scope !== 'my'}
++              reviewing={reviewing}
++              showAssignee={reviewing || mode !== 'technician' || scope !== 'my'}
+               selectedId={String(selectedTicket?.id ?? '')}
+               onSelect={setSelectedTicketId}
+             />
+           ) : (
+-            <TicketBoard rows={page.items} mode={mode} />
++            <TicketBoard rows={page.items} mode={mode} reviewing={reviewing} />
+           )}
+         </section>
+         <aside className="queue-side-panel">
+           {layout === 'list' ? (
+-            <TicketQuickPreview ticket={selectedTicket} mode={mode} />
++            <TicketQuickPreview ticket={selectedTicket} mode={mode} reviewing={reviewing} />
+           ) : null}
+           <QueueHealth rows={page.items} total={page.total} />
+         </aside>
+@@ -1306,12 +1336,14 @@ function TicketList({
+ function TicketTable({
+   rows,
+   mode,
++  reviewing = false,
+   showAssignee = true,
+   selectedId,
+   onSelect,
+ }: {
+   rows: Row[];
+   mode: Mode;
++  reviewing?: boolean;
+   selectedId?: string;
+   showAssignee?: boolean;
+   onSelect?: (id: string) => void;
+@@ -1353,7 +1385,7 @@ function TicketTable({
+                 <td>
+                   <Link
+                     className="ticket-link"
+-                    href={ticketDetailPath(mode, ticket.id)}
++                    href={ticketDetailPath(mode, ticket.id, reviewing)}
+                   >
+                     {String(ticket.ticket_number)}
+                   </Link>
+@@ -1400,7 +1432,7 @@ function TicketTable({
+   );
+ }
+ 
+-function TicketQuickPreview({ ticket, mode }: { ticket?: Row; mode: Mode }) {
++function TicketQuickPreview({ ticket, mode, reviewing }: { ticket?: Row; mode: Mode; reviewing: boolean }) {
+   if (!ticket)
+     return (
+       <section className="panel quick-preview empty-preview">
+@@ -1452,7 +1484,7 @@ function TicketQuickPreview({ ticket, mode }: { ticket?: Row; mode: Mode }) {
+           </dd>
+         </div>
+       </dl>
+-      <Link className="primary full" href={ticketDetailPath(mode, ticket.id)}>
++      <Link className="primary full" href={ticketDetailPath(mode, ticket.id, reviewing)}>
+         Open ticket →
+       </Link>
+     </section>
+@@ -1512,7 +1544,7 @@ function QueueHealth({ rows, total }: { rows: Row[]; total: number }) {
+   );
+ }
+ 
+-function TicketBoard({ rows, mode }: { rows: Row[]; mode: Mode }) {
++function TicketBoard({ rows, mode, reviewing }: { rows: Row[]; mode: Mode; reviewing: boolean }) {
+   const columns = [
+     { name: 'New', statuses: ['NEW', 'OPEN'], tone: 'new' },
+     { name: 'In progress', statuses: ['IN_PROGRESS'], tone: 'progress' },
+@@ -1548,7 +1580,7 @@ function TicketBoard({ rows, mode }: { rows: Row[]; mode: Mode }) {
+                 tickets.map((ticket) => (
+                   <Link
+                     className="board-card"
+-                    href={ticketDetailPath(mode, ticket.id)}
++                    href={ticketDetailPath(mode, ticket.id, reviewing)}
+                     key={String(ticket.id)}
+                   >
+                     <span className="board-ticket-number">
+@@ -1648,6 +1680,7 @@ function NewTicket({
+   onError: (value: string) => void;
+   onCreated: (ticket: { id: string }) => void;
+ }) {
++  const canAssign = canAssignTickets(session.user);
+   const [saving, setSaving] = useState(false);
+   const [tagIds, setTagIds] = useState<string[]>([]);
+   const [clientId, setClientId] = useState('');
+@@ -1662,14 +1695,14 @@ function NewTicket({
+     description: '',
+     source: String(options.sources[0]?.code ?? ''),
+     priority: 'P3_MEDIUM',
+-    assignedUserId: session.user.id,
++    assignedUserId: canAssign ? session.user.id : '',
+     sourceReferenceId: '',
+     departmentId: '',
+     locationText: '',
+   });
+   const contacts = requesters.filter((item) => item.client_id === clientId);
+   const sites = options.sites.filter((item) => item.client_id === clientId);
+-  const assignees = useTicketAssignees(clientId, form.siteId, request);
++  const assignees = useTicketAssignees(canAssign ? clientId : '', form.siteId, request);
+   const selectedAssignee = assignees.items.some((item) => item.id === form.assignedUserId)
+     ? form.assignedUserId : '';
+   const categoryParents = options.categories.filter((item) => !item.parent_id);
+@@ -1989,6 +2022,7 @@ function NewTicket({
+               Category identifies the service area; subcategory records the
+               specific issue for routing and reporting.
+             </p>
++            {canAssign && <>
+             <Select
+               label="Assign to"
+               value={selectedAssignee}
+@@ -1998,6 +2032,7 @@ function NewTicket({
+               optional
+             />
+             {assignees.error && <p role="alert" className="field-help">{assignees.error}</p>}
++            </>}
+             <label className="span-2">
+               Source reference (optional)
+               <input
+@@ -2320,7 +2355,10 @@ function TicketView({
+   onNotice,
+   refresh,
+   canEdit,
+-  canClaim,
++  canAssign,
++  canReview,
++  reviewing,
++  viewerId,
+   canDecideApproval,
+   intern,
+   canRespondHelp,
+@@ -2333,14 +2371,26 @@ function TicketView({
+   onNotice: (value: string) => void;
+   refresh: () => void;
+   canEdit: boolean;
+-  canClaim: boolean;
++  canAssign: boolean;
++  canReview: boolean;
++  reviewing: boolean;
++  viewerId: string;
+   canDecideApproval: boolean;
+   intern: boolean;
+   canRespondHelp: boolean;
+ }) {
+   const ticket = detail.ticket;
++  const ticketStatus = String(ticket.status);
++  const awaitingReview = ticketStatus === 'RESOLVED';
++  const canChangeFields = canEdit && !intern &&
++    (canReview || (ticket.assigned_user_id === viewerId &&
++      !['RESOLVED', 'CLOSED', 'CANCELLED'].includes(ticketStatus)));
++  const statusOptions = options.statuses.filter((status) =>
++    (status !== 'CANCELLED' || canReview) &&
++    (status !== 'CLOSED' || (canReview && (awaitingReview || ticketStatus === 'CLOSED'))),
++  );
+   const assignees = useTicketAssignees(
+-    canEdit && !intern ? String(ticket.client_id ?? '') : '',
++    canAssign ? String(ticket.client_id ?? '') : '',
+     String(ticket.site_id ?? ''),
+     request,
+   );
+@@ -2444,8 +2494,8 @@ function TicketView({
+         title={String(ticket.subject)}
+         detail={`${ticket.client_name} · ${ticket.requester_name}`}
+         action={
+-          <Link className="secondary" href={ticketListPath(mode)}>
+-            ← Back to tickets
++          <Link className="secondary" href={reviewing ? ticketReviewPath(mode) : ticketListPath(mode)}>
++            {reviewing ? '← Back to review queue' : '← Back to tickets'}
+           </Link>
+         }
+       />
+@@ -2456,7 +2506,8 @@ function TicketView({
+             : 'Read-only team ticket. You can review its details and activity because it belongs to one of your assigned sites.'}
+         </div>
+       ) : null}
+-      {canClaim && !ticket.assigned_user_id ? (
++      {awaitingReview && <div className="notice">Resolved. Waiting for review and closure.</div>}
++      {canAssign && !ticket.assigned_user_id ? (
+         <div className="panel">
+           <button
+             className="primary"
+@@ -2746,22 +2797,23 @@ function TicketView({
+                 </article>
+               ))}
+             </ExpandablePanel>
+-            {canEdit && !intern ? (
++            {canChangeFields ? (
+               <ExpandablePanel title="Ticket controls" className="">
+                 <label>
+                   Status
+                   <select
+-                    value={String(ticket.status)}
++                    value={ticketStatus}
++                    disabled={busy}
+                     onChange={(event) =>
+                       void mutate(
+                         base,
+                         { status: event.target.value },
+-                        'Status updated.',
++                        event.target.value === 'RESOLVED' ? 'Ticket resolved and sent to the review queue.' : 'Status updated.',
+                         'PATCH',
+                       )
+                     }
+                   >
+-                    {options.statuses.map((status) => (
++                    {statusOptions.map((status) => (
+                       <option key={status} value={status}>
+                         {statusLabels[status] ?? display(status)}
+                       </option>
+@@ -2809,7 +2861,7 @@ function TicketView({
+               className="ticket-tag-panel"
+               defaultOpen
+             >
+-              {canEdit ? (
++              {canChangeFields ? (
+                 <TicketTagEditor
+                   key={JSON.stringify(ticket.tags ?? [])}
+                   tags={ticket.tags}
+@@ -2858,7 +2910,7 @@ function TicketView({
+                 </p>
+               ) : null}
+             </ExpandablePanel>
+-            {canEdit && !intern ? (
++            {canAssign ? (
+               <ExpandablePanel title="Assignment" className="">
+                 <Select
+                   label="Technician"
+diff --git a/ASTRA-Frontend-latest/src/pages/admin/record-form.tsx b/ASTRA-Frontend-latest/src/pages/admin/record-form.tsx
+index 5111d7e..3f3d5d0 100644
+--- a/ASTRA-Frontend-latest/src/pages/admin/record-form.tsx
++++ b/ASTRA-Frontend-latest/src/pages/admin/record-form.tsx
+@@ -20,13 +20,13 @@ const roleProfiles = [
+     code: 'TECHNICIAN',
+     name: 'Technician',
+     description:
+-      'Work assigned tickets, use authorized site-team queues, assign or transfer work, reply and add internal notes.',
++      'Work assigned tickets, use authorized site-team queues, reply, add internal notes and resolve tickets for review.',
+   },
+   {
+     code: 'TEAM_LEAD',
+     name: 'Team Lead',
+     description:
+-      'Technician access plus team oversight, category and tag maintenance, and operational reports.',
++      'Technician access plus ticket assignment, review and closure, category and tag maintenance, and operational reports.',
+   },
+   {
+     code: 'MANAGER',

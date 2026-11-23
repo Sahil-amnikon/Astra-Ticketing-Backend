@@ -1,0 +1,174 @@
+diff --git a/ASTRA-Backend-latest/Program.cs b/ASTRA-Backend-latest/Program.cs
+index 7108a46..3245497 100644
+--- a/ASTRA-Backend-latest/Program.cs
++++ b/ASTRA-Backend-latest/Program.cs
+@@ -338,11 +338,11 @@ app.MapGet("/api/tickets/options", async (HttpContext context, MySqlStore store,
+     return result is null ? Results.Forbid() : Results.Ok(result);
+ }).RequireAuthorization();
+ 
+-app.MapGet("/api/tickets/assignees", async (Guid clientId, Guid? siteId, HttpContext context, MySqlStore store, CancellationToken ct) =>
++app.MapGet("/api/tickets/assignees", async (Guid clientId, Guid? siteId, bool? includeAllStaff, HttpContext context, MySqlStore store, CancellationToken ct) =>
+ {
+     var userId = context.User.FindFirstValue("astra-user-id");
+     if (userId is null) return Results.Unauthorized();
+-    var assignees = await store.GetTicketAssignees(userId, clientId.ToString("D"), siteId?.ToString("D"), ct);
++    var assignees = await store.GetTicketAssignees(userId, clientId.ToString("D"), siteId?.ToString("D"), includeAllStaff == true, ct);
+     return Results.Ok(assignees);
+ }).RequireAuthorization();
+ 
+diff --git a/ASTRA-Backend-latest/FeatureTicketAssignees.cs b/ASTRA-Backend-latest/FeatureTicketAssignees.cs
+index 118e0ef..590a760 100644
+--- a/ASTRA-Backend-latest/FeatureTicketAssignees.cs
++++ b/ASTRA-Backend-latest/FeatureTicketAssignees.cs
+@@ -4,17 +4,21 @@ public sealed partial class MySqlStore
+ {
+     private const string TicketStaffRoles = "'INTERN','TECHNICIAN','TEAM_LEAD','MANAGER','ADMIN'";
+ 
+-    private static string TicketAssigneeScope(string allowGlobalAdmin) => $"""
++    private static string ActiveTicketStaff => $"""
+         u.active=1
+         AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6))
+         AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code IN ({TicketStaffRoles}))
+-        AND (({allowGlobalAdmin} AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code='ADMIN'))
++        """;
++
++    private static string TicketAssigneeScope(string allowGlobalAdmin) => $"""
++        (({allowGlobalAdmin} AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code='ADMIN'))
+              OR (EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=u.id AND cu.client_id=@client)
+                  AND (@site IS NULL OR NOT EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id)
+                       OR EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id AND us.site_id=@site))))
+         """;
+ 
+-    public async Task<List<Dictionary<string, object?>>> GetTicketAssignees(string userId, string clientId, string? siteId, CancellationToken ct)
++    public async Task<List<Dictionary<string, object?>>> GetTicketAssignees(string userId, string clientId,
++        string? siteId, bool includeAllStaff, CancellationToken ct)
+     {
+         if (ConnectionString is null) return [];
+         var sql = $"""
+@@ -25,9 +29,11 @@ public sealed partial class MySqlStore
+                   AND (a.access_expires_at IS NULL OR a.access_expires_at>UTC_TIMESTAMP(6))
+                   AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=a.id AND r.role_code IN ({TicketStaffRoles}))
+             )
+-            SELECT u.id,u.display_name AS name
++            SELECT u.id,u.display_name AS name,
++                   CASE WHEN {TicketAssigneeScope("a.is_admin")} THEN 1 ELSE 0 END AS can_assign
+             FROM users u CROSS JOIN actor a
+-            WHERE {TicketAssigneeScope("a.is_admin")}
++            WHERE {ActiveTicketStaff}
++              AND ((a.is_admin AND @includeAllStaff) OR {TicketAssigneeScope("a.is_admin")})
+               AND (@site IS NULL OR EXISTS(SELECT 1 FROM sites s WHERE s.id=@site AND s.client_id=@client))
+               AND (a.is_admin OR (
+                   (EXISTS(SELECT 1 FROM client_users cu WHERE cu.user_id=a.id AND cu.client_id=@client)
+@@ -35,15 +41,16 @@ public sealed partial class MySqlStore
+                   AND (@site IS NULL OR NOT EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=a.id)
+                        OR EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=a.id AND us.site_id=@site))
+               ))
+-            ORDER BY u.display_name,u.id
++            ORDER BY can_assign DESC,u.display_name,u.id
+             """;
+-        return await FQuery(sql, ct, ("actor", userId), ("client", clientId), ("site", siteId));
++        return await FQuery(sql, ct, ("actor", userId), ("client", clientId), ("site", siteId),
++            ("includeAllStaff", includeAllStaff));
+     }
+ 
+     private static async Task<bool> IsTicketAssigneeEligible(MySqlConnection connection, MySqlTransaction transaction,
+         string assigneeId, string clientId, string? siteId, bool allowGlobalAdmin, CancellationToken ct)
+     {
+-        var sql = $"SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=@assignee AND {TicketAssigneeScope("@allowGlobalAdmin")})";
++        var sql = $"SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=@assignee AND {ActiveTicketStaff} AND {TicketAssigneeScope("@allowGlobalAdmin")})";
+         await using var command = FCommand(connection, transaction, sql,
+             ("assignee", assigneeId), ("client", clientId), ("site", siteId), ("allowGlobalAdmin", allowGlobalAdmin));
+         return FBool(await command.ExecuteScalarAsync(ct));
+diff --git a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+index 9f82468..33fe295 100644
+--- a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
++++ b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+@@ -1600,10 +1600,12 @@ function useTicketAssignees(
+   clientId: string,
+   siteId: string,
+   request: (path: string, init?: RequestInit) => Promise<unknown>,
++  includeAllStaff = false,
+ ) {
+   const [result, setResult] = useState<{ path: string; items: Row[]; error?: string }>();
+   const query = new URLSearchParams({ clientId });
+   if (siteId) query.set('siteId', siteId);
++  if (includeAllStaff) query.set('includeAllStaff', 'true');
+   const path = clientId ? `/tickets/assignees?${query}` : '';
+ 
+   useEffect(() => {
+@@ -1621,9 +1623,14 @@ function useTicketAssignees(
+     return () => controller.abort();
+   }, [path, request]);
+ 
+-  return result && result.path === path
+-    ? { ...result, loading: false }
+-    : { items: [] as Row[], error: undefined, loading: !!path };
++  const current = result?.path === path ? result : undefined;
++  const items = current?.items ?? [];
++  return {
++    items: items.filter((item) => Number(item.can_assign ?? 1) === 1),
++    unavailable: items.filter((item) => Number(item.can_assign ?? 1) === 0),
++    error: current?.error,
++    loading: !current && !!path,
++  };
+ }
+ 
+ function NewTicket({
+@@ -1660,7 +1667,9 @@ function NewTicket({
+   });
+   const contacts = requesters.filter((item) => item.client_id === clientId);
+   const sites = options.sites.filter((item) => item.client_id === clientId);
+-  const assignees = useTicketAssignees(clientId, form.siteId, request);
++  const assignees = useTicketAssignees(
++    clientId, form.siteId, request, session.user.roles.includes('ADMIN'),
++  );
+   const selectedAssignee = assignees.items.some((item) => item.id === form.assignedUserId)
+     ? form.assignedUserId : '';
+   const categoryParents = options.categories.filter((item) => !item.parent_id);
+@@ -1985,10 +1994,14 @@ function NewTicket({
+               value={selectedAssignee}
+               onChange={(value) => field('assignedUserId', value)}
+               options={assignees.items}
++              unavailableOptions={assignees.unavailable}
+               disabled={!clientId || assignees.loading || !!assignees.error}
+               optional
+             />
+             {assignees.error && <p role="alert" className="field-help">{assignees.error}</p>}
++            {assignees.unavailable.length > 0 && (
++              <p className="field-help">Staff listed as unavailable need access to this client and site before they can receive the ticket.</p>
++            )}
+             <label className="span-2">
+               Source reference (optional)
+               <input
+@@ -2078,6 +2091,7 @@ function PendingAttachment({
+ function Select({
+   label,
+   options,
++  unavailableOptions,
+   value,
+   onChange,
+   optional,
+@@ -2086,6 +2100,7 @@ function Select({
+ }: {
+   label: string;
+   options: Row[];
++  unavailableOptions?: Row[];
+   value: string;
+   onChange: (value: string) => void;
+   optional?: boolean;
+@@ -2107,6 +2122,15 @@ function Select({
+             {String(item.name)}
+           </option>
+         ))}
++        {unavailableOptions?.length ? (
++          <optgroup label="Unavailable for this client or site" disabled>
++            {unavailableOptions.map((item) => (
++              <option key={String(item.id)} value={String(item.id)}>
++                {String(item.name)}
++              </option>
++            ))}
++          </optgroup>
++        ) : null}
+       </select>
+     </label>
+   );

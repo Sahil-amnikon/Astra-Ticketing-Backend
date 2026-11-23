@@ -1,0 +1,50 @@
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import os from 'node:os';
+import assert from 'node:assert/strict';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const front = path.join(root, 'ASTRA-Frontend-latest');
+const { createServer } = await import(pathToFileURL(path.join(front, 'node_modules/vite/dist/node/index.js')));
+const ts = (await import(pathToFileURL(path.join(front, 'node_modules/typescript/lib/typescript.js')))).default;
+const source = await readFile(path.join(front, 'src/pages/ui-label.ts'), 'utf8');
+const { uiLabel } = await import('data:text/javascript;base64,' + Buffer.from(ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
+for (const [value, expected] of [['NORMAL','Normal'],['MEDIUM','Medium'],['DRAFT','Draft'],['IN_PROGRESS','In Progress'],['TEAM_LEAD','Team Lead'],['MICROSOFT_365','Microsoft 365'],['VPN','VPN'],['CHG-000006','CHG-000006'],['DrinkPak','DrinkPak'],['User@example.com','User@example.com']]) assert.equal(uiLabel(value),expected);
+const {chromium} = await import(pathToFileURL(path.join(process.env.ASTRA_BROWSER_TEST_RUNTIME,'playwright/index.mjs')));
+const target = 'http://localhost:3201';
+const server = await createServer({root:front,server:{host:'localhost',port:0,proxy:{'/api':{target,changeOrigin:true,headers:{Origin:target,Referer:target+'/operations'}}}}});
+let browser;
+try {
+  await server.listen();
+  const url = server.resolvedUrls.local[0];
+  browser = await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+  const context = await browser.newContext({viewport:{width:1700,height:1000}});
+  const login = await context.request.post(target+'/api/auth/local-test',{headers:{Origin:target}}); assert.ok(login.ok());
+  const page = await context.newPage(); const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(url+'changes?workspace=operations');
+  await page.locator('.change-register-table tbody tr').first().waitFor();
+  const read = await page.locator('.change-register-table').evaluate(t=>({labels:[...t.querySelectorAll('.pill')].map(x=>x.textContent),wrap:getComputedStyle(t.querySelector('td:nth-child(2)')).overflowWrap,whiteSpace:getComputedStyle(t.querySelector('.pill')).whiteSpace,overflow:document.documentElement.scrollWidth>innerWidth}));
+  assert.ok(read.labels.includes('Draft')); assert.ok(read.labels.includes('Normal')); assert.ok(read.labels.includes('Medium')); assert.equal(read.wrap,'normal'); assert.equal(read.whiteSpace,'nowrap'); assert.equal(read.overflow,false);
+  await page.screenshot({path:path.join(os.tmpdir(),'astra-finish-desktop.png')});
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark'});
+  const color=await page.locator('.pill.priority-medium').first().evaluate(e=>({bg:getComputedStyle(e).backgroundColor,fg:getComputedStyle(e).color})); assert.notEqual(color.bg,color.fg);
+  await page.screenshot({path:path.join(os.tmpdir(),'astra-finish-dark.png')});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.ok(await page.locator('.table-wrap').first().evaluate(e=>e.scrollWidth>e.clientWidth));
+  await page.screenshot({path:path.join(os.tmpdir(),'astra-finish-mobile.png')});
+  await page.setViewportSize({width:1366,height:900});
+  await page.goto(url+'changes/new?workspace=operations');
+  await page.locator('select[name="changeType"]').waitFor();
+  assert.equal(await page.locator('select[name="changeType"] option[value="NORMAL"]').textContent(),'Normal');
+  assert.equal(await page.locator('select[name="risk"] option[value="MEDIUM"]').textContent(),'Medium');
+  await page.locator('select[name="risk"]').selectOption('MEDIUM');
+  assert.equal(await page.locator('select[name="risk"]').evaluate(e=>new FormData(e.form).get('risk')),'MEDIUM');
+  for (const route of ['problems?workspace=operations','knowledge?workspace=operations','admin/users','management']) {
+    await page.goto(url+route); await page.locator('main h1').waitFor(); await page.waitForTimeout(700);
+    assert.equal(await page.getByText('Unable to load this page',{exact:true}).count(),0);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,route);
+  }
+  assert.deepEqual(errors,[]);
+  console.log('PASS: readable labels, preserved IDs, unbroken badges, contained tables, light/dark/mobile layouts, and Problem/Knowledge/People/Management pages.');
+} finally {await browser?.close(); await server.close();}

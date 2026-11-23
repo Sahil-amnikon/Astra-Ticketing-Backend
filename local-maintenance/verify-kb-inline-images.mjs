@@ -1,0 +1,44 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const require = createRequire(path.join(root, 'ASTRA-Frontend-latest/package.json'));
+const ts = require('typescript');
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+const cache = new Map();
+function load(file) {
+  if (cache.has(file)) return cache.get(file);
+  const source = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const module = { exports: {} }; cache.set(file, module.exports);
+  const localRequire = name => {
+    if (name.endsWith('.css')) return {};
+    if (!name.startsWith('.')) return require(name);
+    const target = path.resolve(path.dirname(file), name);
+    return load(['.tsx', '.ts'].map(ext => target + ext).find(candidate => fs.existsSync(candidate)) ?? target);
+  };
+  vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename: file })(localRequire, module, module.exports);
+  return module.exports;
+}
+const { KnowledgeContent, KnowledgeEditor, parseKnowledge } = load(path.join(root, 'ASTRA-Frontend-latest/src/pages/knowledge/knowledge-content.tsx'));
+const image = { id: 'a'.repeat(64), name: 'screenshot.png', type: 'image/png', size: 123 };
+const document = { id: 'b'.repeat(64), name: 'instructions.pdf', type: 'application/octet-stream', size: 200 };
+const marker = `[[KB_IMAGE:${image.id}]]`;
+const body = `Before screenshot\n${marker}\nAfter screenshot\n\n[ASTRA_KB_MEDIA_V1]${JSON.stringify([image, document])}`;
+const html = renderToStaticMarkup(React.createElement(KnowledgeContent, { body, id: 'article-id' }));
+assert.equal((html.match(/<img /g) ?? []).length, 1, 'Inline image must not be duplicated as an attachment');
+assert(html.indexOf('Before screenshot') < html.indexOf('<img '));
+assert(html.indexOf('<img ') < html.indexOf('After screenshot'));
+assert(html.includes('/api/knowledge/article-id/files/' + image.id));
+assert(html.includes('instructions.pdf') && !html.includes(marker));
+const forged = renderToStaticMarkup(React.createElement(KnowledgeContent, { body: '[[KB_IMAGE:' + 'c'.repeat(64) + ']] <script>alert(1)</script>', id: 'article-id' }));
+assert(!forged.includes('<img ') && !forged.includes('<script>'), 'Unknown images and pasted HTML must not become active content');
+const legacy = renderToStaticMarkup(React.createElement(KnowledgeContent, { body: 'Legacy article\n\n[ASTRA_KB_MEDIA_V1]' + JSON.stringify([image]), id: 'article-id' }));
+assert(legacy.includes('<img ') && parseKnowledge(body).files.length === 2);
+const editor = renderToStaticMarkup(React.createElement(KnowledgeEditor, { body, articleId: 'article-id', onFiles() {} }));
+assert(editor.includes('class="kb-inline-editor"') && editor.includes('contentEditable="true"'));
+assert(editor.includes('name="body"') && !editor.includes('<textarea name="body"'));
+console.log('PASS: inline image order, protected URLs, no duplicate images, separate documents, legacy articles, escaped HTML and editable article box. No server or database.');

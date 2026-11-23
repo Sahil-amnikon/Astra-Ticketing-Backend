@@ -1,0 +1,13 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {routingTestTables} from './routing-test-tables.mjs';
+const sql=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),db=new DatabaseSync(':memory:');db.function('UTC_TIMESTAMP',precision=>'2026-11-20');
+db.exec(`CREATE TABLE users(id TEXT,display_name TEXT,active INTEGER,access_expires_at TEXT);CREATE TABLE user_roles(user_id TEXT,role_code TEXT);CREATE TABLE client_users(user_id TEXT,client_id TEXT);CREATE TABLE sites(id TEXT,active INTEGER);CREATE TABLE submission_reviews(kind TEXT,entity_id TEXT,submitted_by_user_id TEXT,status TEXT);CREATE TABLE changes(id TEXT,client_id TEXT,site_id TEXT,owner_user_id TEXT,requested_by_user_id TEXT,change_type TEXT,status TEXT,created_at TEXT);
+INSERT INTO users VALUES('admin','Admin',1,NULL),('tl','Lead',1,NULL),('tech','Tech',1,NULL);INSERT INTO user_roles VALUES('admin','ADMIN'),('tl','TEAM_LEAD'),('tech','TECHNICIAN');INSERT INTO client_users VALUES('tl','geometry'),('tech','geometry');INSERT INTO sites VALUES('drinkpak',1),('ashoc',1);
+INSERT INTO changes VALUES('inside','geometry','drinkpak','tech','tech','NORMAL','APPROVED','2026-11-20'),('other-team','ravid','ravid-site','tech','tech','NORMAL','APPROVED','2026-11-20'),('old','geometry','drinkpak','tech','tech','NORMAL','CLOSED','2026-10-01'),('end-exclusive','geometry','drinkpak','tech','tech','NORMAL','APPROVED','2026-11-21'),('multi','geometry','drinkpak','tech','tech','NORMAL','APPROVED','2026-11-20');`);
+routingTestTables(db);db.exec(`INSERT INTO user_sites VALUES('tl','drinkpak');INSERT INTO change_request_details VALUES('multi','["drinkpak","ashoc"]','[]','USER','tech','admin');`);
+assert.throws(()=>db.prepare(sql.broken),/no such column.*created_by_user_id/,'Original report reproduces the missing ticket column error');
+const query=db.prepare(sql.fixedSql);const args={actor:'admin',admin:1,client:null,start:'2026-10-22',end:'2026-11-21'};
+assert.equal(query.all(args)[0].count,3,'Admin report works without ticket-only change columns');
+assert.equal(query.all({...args,client:'geometry'})[0].count,2,'Client filter retains the correct records');
+assert.equal(query.all({...args,actor:'tl',admin:0})[0].count,1,'Team lead sees own authorized client/site; multi-site records require complete coverage');
+assert.equal(query.all({...args,start:'2026-12-01',end:'2026-12-02'}).length,0,'An empty reporting period is valid');
+console.log('PASS: reproduced the original missing-column failure; actual fixed SQL handles admin/client/site scope, multiple sites, date boundaries and empty results. In-memory fixtures only.');

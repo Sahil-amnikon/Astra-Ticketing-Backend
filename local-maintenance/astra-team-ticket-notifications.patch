@@ -1,0 +1,109 @@
+diff --git a/ASTRA-Backend-latest/FeatureNotificationDelivery.cs b/ASTRA-Backend-latest/FeatureNotificationDelivery.cs
+index 0aa4873..78d77e3 100644
+--- a/ASTRA-Backend-latest/FeatureNotificationDelivery.cs
++++ b/ASTRA-Backend-latest/FeatureNotificationDelivery.cs
+@@ -1,13 +1,13 @@
+ using MySqlConnector;
+ 
+-public sealed record ReplayTicketAssignments(string[] TicketIds);
++public sealed record ReplayTicketAssignments(string[] TicketIds, bool TeamLeadsOnly = false);
+ 
+ public static partial class FeatureApis
+ {
+     private static void MapNotificationDelivery(RouteGroupBuilder api)
+     {
+         api.MapPost("/notifications/replay-ticket-assignments", async (ReplayTicketAssignments body, HttpContext c, MySqlStore s, CancellationToken ct) =>
+-            Results.Ok(await s.ReplayTicketAssignmentAlerts(Actor(c), body.TicketIds, ct)));
++            Results.Ok(await s.ReplayTicketAssignmentAlerts(Actor(c), body.TicketIds, body.TeamLeadsOnly, ct)));
+     }
+ }
+ 
+@@ -73,7 +73,37 @@ public sealed partial class MySqlStore
+         }
+     }
+ 
+-    public async Task<object> ReplayTicketAssignmentAlerts(string actor, string[]? ticketIds, CancellationToken ct)
++    private static async Task<int> QueueNewTeamTicketAlerts(MySqlConnection c, MySqlTransaction tx,
++        string? actor, string ticket, CancellationToken ct)
++    {
++        var leads = await FRows(c, tx, """
++            SELECT DISTINCT u.id,t.ticket_number,t.subject
++            FROM tickets t
++            JOIN client_users cu ON cu.client_id=t.client_id
++            JOIN users u ON u.id=cu.user_id
++            LEFT JOIN notification_preferences p ON p.user_id=u.id
++            WHERE t.id=@ticket AND t.status='NEW'
++              AND (t.assigned_user_id IS NULL OR u.id<>t.assigned_user_id)
++              AND u.active=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6))
++              AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role_code='TEAM_LEAD')
++              AND (NOT EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id)
++                OR EXISTS(SELECT 1 FROM user_sites us WHERE us.user_id=u.id AND us.site_id=t.site_id))
++              AND COALESCE(p.ticket_unattended,1)=1
++              AND (@actor IS NULL OR u.id<>@actor)
++            """, ct, ("ticket", ticket), ("actor", actor));
++        var queued = 0;
++        foreach (var lead in leads)
++        {
++            var user = (string)lead["id"]!;
++            queued += await InsertNotification(c, tx, user, ticket, "TICKET_UPDATED",
++                $"New team ticket: {lead["ticket_number"]}",
++                lead["subject"] as string ?? "New team ticket",
++                $"ticket-event:{ticket}:new-team-ticket:{user}", ct);
++        }
++        return queued;
++    }
++
++    public async Task<object> ReplayTicketAssignmentAlerts(string actor, string[]? ticketIds, bool teamLeadsOnly, CancellationToken ct)
+     {
+         await RequireAdmin(actor, ct);
+         if (ticketIds is null || ticketIds.Length is < 1 or > 20 || ticketIds.Any(id => !Guid.TryParse(id, out _)))
+@@ -82,14 +112,17 @@ public sealed partial class MySqlStore
+         await using var c = CreateConnection();
+         await c.OpenAsync(ct);
+         await using var tx = await c.BeginTransactionAsync(ct);
++        var queued = 0;
+         foreach (var id in ids)
+         {
+             if ((await FRows(c, tx, "SELECT id FROM tickets WHERE id=@id FOR UPDATE", ct, ("id", id))).Count == 0)
+                 throw new ArgumentException("A selected ticket does not exist.");
+-            await QueueTicketInAppEvent(c, tx, actor, id, null, "Ticket created", ct);
++            if (teamLeadsOnly) queued += await QueueNewTeamTicketAlerts(c, tx, actor, id, ct);
++            else await QueueTicketInAppEvent(c, tx, actor, id, null, "Ticket created", ct);
+         }
+-        await AddAudit(c, tx, actor, "NOTIFICATIONS.ASSIGNMENTS_REPLAYED", "USER", actor, new { ticketIds = ids }, ct);
++        await AddAudit(c, tx, actor, teamLeadsOnly ? "NOTIFICATIONS.NEW_TEAM_TICKETS_REPLAYED" : "NOTIFICATIONS.ASSIGNMENTS_REPLAYED",
++            "USER", actor, new { ticketIds = ids, teamLeadAlertsQueued = teamLeadsOnly ? (int?)queued : null }, ct);
+         await tx.CommitAsync(ct);
+-        return new { processed = ids.Length };
++        return new { processed = ids.Length, teamLeadAlertsQueued = teamLeadsOnly ? (int?)queued : null };
+     }
+ }
+diff --git a/ASTRA-Backend-latest/FeatureTicketMail.cs b/ASTRA-Backend-latest/FeatureTicketMail.cs
+index 33f0ade..c75e1dd 100644
+--- a/ASTRA-Backend-latest/FeatureTicketMail.cs
++++ b/ASTRA-Backend-latest/FeatureTicketMail.cs
+@@ -6,6 +6,8 @@ public sealed partial class MySqlStore
+     private static async Task QueueTicketEvent(MySqlConnection connection, MySqlTransaction tx, string? actor, string ticket, string? comment, string eventName, CancellationToken ct)
+     {
+         await QueueTicketInAppEvent(connection, tx, actor, ticket, comment, eventName, ct);
++        if (eventName.EndsWith("ticket created", StringComparison.OrdinalIgnoreCase))
++            await QueueNewTeamTicketAlerts(connection, tx, actor, ticket, ct);
+         var settings = (await FRows(connection, tx, "SELECT enabled,ticket_address FROM mail_settings WHERE id=1", ct)).FirstOrDefault();
+         if (settings is null || !FBool(settings["enabled"]) || settings["ticket_address"] is not string sender)
+             return;
+diff --git a/ASTRA-Backend-latest/FeatureHelp.cs b/ASTRA-Backend-latest/FeatureHelp.cs
+index 6c6409f..3fb1d34 100644
+--- a/ASTRA-Backend-latest/FeatureHelp.cs
++++ b/ASTRA-Backend-latest/FeatureHelp.cs
+@@ -18,9 +18,9 @@ public static partial class FeatureApis
+ public sealed record HelpHit(string SourceType, string Id, string Title, string Summary, int Score, string[] MatchReasons, string Href, string? Resolution = null, string[]? Procedure = null);
+ public sealed partial class MySqlStore
+ {
+-    private static async Task InsertNotification(MySqlConnection c, MySqlTransaction tx, string user, string ticket, string type, string title, string body, string key, CancellationToken ct)
++    private static Task<int> InsertNotification(MySqlConnection c, MySqlTransaction tx, string user, string ticket, string type, string title, string body, string key, CancellationToken ct)
+     {
+-        await FExecute(c, tx, "INSERT IGNORE INTO notifications(user_id,ticket_id,type,title,body,event_key) SELECT @user,@ticket,@type,@title,@body,@key FROM users u WHERE u.id=@user AND u.active=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6)) AND (@type<>'PUBLIC_REPLY' OR COALESCE((SELECT public_reply FROM notification_preferences p WHERE p.user_id=u.id),1)=1)", ct, ("user", user), ("ticket", ticket), ("type", type), ("title", title), ("body", body), ("key", key));
++        return FExecute(c, tx, "INSERT IGNORE INTO notifications(user_id,ticket_id,type,title,body,event_key) SELECT @user,@ticket,@type,@title,@body,@key FROM users u WHERE u.id=@user AND u.active=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>UTC_TIMESTAMP(6)) AND (@type<>'PUBLIC_REPLY' OR COALESCE((SELECT public_reply FROM notification_preferences p WHERE p.user_id=u.id),1)=1)", ct, ("user", user), ("ticket", ticket), ("type", type), ("title", title), ("body", body), ("key", key));
+     }
+     private static string SafeHelpQuery(string input) => Regex.Replace(Regex.Replace(input, @"https?://\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}\b|\b[A-Z]{2,8}-\d{3,10}\b", " ", RegexOptions.IgnoreCase), @"\s+", " ").Trim();
+     public async Task<object> SearchHelp(string actor, JsonElement b, CancellationToken ct)

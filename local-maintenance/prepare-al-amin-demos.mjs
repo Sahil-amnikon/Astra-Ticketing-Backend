@@ -1,0 +1,12 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const folder=path.dirname(fileURLToPath(import.meta.url));
+let runner=(await fs.readFile(path.join(folder,'repair-employee-users.py'),'utf8')).replace(/\r\n/g,'\n');
+const start=runner.indexOf("source = r'''"),end=runner.indexOf("\n'''",start);
+if(start<0||end<0)throw Error('Existing VM runner differs. Nothing written.');
+runner=runner.slice(0,start)+"source = (Path(__file__).resolve().parent/'create-al-amin-review-demos.cs').read_text()"+runner.slice(end+4);
+runner=runner.replaceAll('repair-employee-users.py','create-al-amin-review-demos.py').replaceAll('ASTRA_EMPLOYEE_CONNECTION','ASTRA_DEMO_CONNECTION').replaceAll('.employee-user-repair-code-','.al-amin-review-demo-code-');
+runner=runner.replace('Associate company User-profile employees with Amnikon.','Create four labelled, unapproved review demos as Al Amin using application permissions.');
+await fs.writeFile(path.join(folder,'create-al-amin-review-demos.py'),runner);
+console.log('Prepared VM demo runner. No connection or database changes performed.');

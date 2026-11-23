@@ -1,0 +1,42 @@
+diff --git a/ASTRA-Backend-latest/Program.cs b/ASTRA-Backend-latest/Program.cs
+index e2d01ca..853c53a 100644
+--- a/ASTRA-Backend-latest/Program.cs
++++ b/ASTRA-Backend-latest/Program.cs
+@@ -307,6 +307,16 @@ app.MapGet("/api/tickets", async (HttpContext context, MySqlStore store, Cancell
+     var scope = query["scope"].FirstOrDefault() ?? "my";
+     var status = query["status"].FirstOrDefault();
+     var search = query["q"].FirstOrDefault()?.Trim() ?? "";
++    if (query["queue"] == "true" && status is null)
++    {
++        status = search.ToUpperInvariant() switch
++        {
++            "CLOSE" or "CLOSED" => "CLOSED",
++            "RESOLVED" => "RESOLVED",
++            _ => null
++        };
++        if (status is not null) search = "";
++    }
+     if (scope is not ("my" or "team" or "all" or "internal" or "unassigned") || search.Length > 200 ||
+         (status is not null && status is not ("NEW" or "OPEN" or "IN_PROGRESS" or "WAITING_FOR_CLIENT" or "WAITING_FOR_VENDOR" or "ON_HOLD" or "RESOLVED" or "CLOSED" or "CANCELLED")))
+         return Results.BadRequest(new { error = new { code = "INVALID_FILTER", message = "One or more ticket filters are invalid." } });
+@@ -3085,6 +3095,9 @@ public sealed partial class MySqlStore(IConfiguration configuration, IMailTransp
+         };
+         var accessPredicate = isAdmin ? "1=1" : "((t.client_id IN (SELECT client_id FROM client_users WHERE user_id=@id) OR t.site_id IN (SELECT site_id FROM user_sites WHERE user_id=@id)) AND (NOT EXISTS(SELECT 1 FROM user_sites WHERE user_id=@id) OR t.site_id IN (SELECT site_id FROM user_sites WHERE user_id=@id)))";
+         var predicate = $"({accessPredicate}) AND ({scopePredicate}) AND (@ticketId IS NULL OR t.id=@ticketId) AND (@status IS NULL OR t.status=@status) AND (@search='' OR t.ticket_number LIKE @pattern OR t.subject LIKE @pattern OR t.description LIKE @pattern OR c.name LIKE @pattern OR r.name LIKE @pattern)";
++        if (filters is not null && filters["queue"] == "true" && status is null && search.Length == 0 &&
++            filters["dashboardFilter"] != "RESOLVED_RECENTLY")
++            predicate += " AND t.status NOT IN ('CLOSED','RESOLVED')";
+         var extraFilters = TicketExtraFilters(filters);
+         predicate += extraFilters.Sql;
+         var from = " FROM tickets t JOIN clients c ON c.id=t.client_id JOIN contacts r ON r.id=t.requester_id LEFT JOIN sites s ON s.id=t.site_id LEFT JOIN categories cat ON cat.id=t.category_id LEFT JOIN categories parentcat ON parentcat.id=cat.parent_id LEFT JOIN users u ON u.id=t.assigned_user_id LEFT JOIN ticket_sla sla ON sla.ticket_id=t.id ";
+diff --git a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+--- a/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
++++ b/ASTRA-Frontend-latest/src/pages/ticket-workspace.tsx
+@@ -298,6 +298,7 @@ function TicketWorkspaceScreen({
+     const listQuery = new URLSearchParams({
+       scope: isWideMode(mode) ? 'all' : ticketScope,
+       pageSize: '50',
++      queue: 'true',
+     });
+     for (const [key, value] of Object.entries(appliedTicketFilters))
+       if (value) listQuery.set(key, value);
